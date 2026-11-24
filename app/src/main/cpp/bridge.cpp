@@ -4,6 +4,8 @@
 #include <android/log.h>
 #include <thread>
 #include <atomic>
+#include <array>
+#include <climits>
 
 #include <aasdk/TCP/TCPWrapper.hpp>
 #include <aasdk/TCP/TCPEndpoint.hpp>
@@ -123,6 +125,9 @@ public:
     std::shared_ptr<aasdk::channel::sensorsource::SensorSourceService> sensorChannel;
     std::shared_ptr<aasdk::channel::mediasource::IMediaSourceService> micChannel;
     std::shared_ptr<aasdk::channel::mediasink::video::IVideoMediaSinkService> videoChannel;
+    // Truck.toArray(): speed mm/s, gear, parking brake, battery %, range m. INT_MIN = unknown.
+    int truck[5] = {INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN};
+    bool offered[5] = {};  // which of those Android Auto was told this car has
     bool moving = false, night = false, micOpen = false, sensorsReady = false, videoReady = false, inputReady = false;
 
     void end(const std::string &why) {
@@ -146,6 +151,14 @@ public:
         // Bit flags from DrivingStatus: while moving, block keyboard, settings and long messages; video stays on.
         batch.add_driving_status_data()->set_status(moving ? (2 | 8 | 16) : 0);
         batch.add_night_mode_data()->set_night_mode(night);
+        if (offered[0] && truck[0] != INT_MIN) batch.add_speed_data()->set_speed_e3(truck[0]);
+        if (offered[1] && truck[1] != INT_MIN) batch.add_gear_data()->set_gear((sensor::Gear) truck[1]);
+        if (offered[2] && truck[2] != INT_MIN) batch.add_parking_brake_data()->set_parking_brake(truck[2] != 0);
+        if ((offered[3] && truck[3] != INT_MIN) || (offered[4] && truck[4] != INT_MIN)) {
+            auto *fuel = batch.add_fuel_data();  // Android Auto's "fuel" carries the battery on an EV
+            if (truck[3] != INT_MIN) fuel->set_fuel_level(truck[3]);
+            if (truck[4] != INT_MIN) fuel->set_range(truck[4]);
+        }
         sensorChannel->sendSensorEventIndication(batch, ::promise(*this, "sensors"));
     }
 
@@ -357,6 +370,10 @@ struct Sensors : Base, aasdk::channel::sensorsource::ISensorSourceServiceEventHa
         auto *src = svc->mutable_sensor_source_service();
         src->add_sensors()->set_sensor_type(sensor::SENSOR_DRIVING_STATUS_DATA);
         src->add_sensors()->set_sensor_type(sensor::SENSOR_NIGHT_MODE);
+        if (s.offered[0]) src->add_sensors()->set_sensor_type(sensor::SENSOR_SPEED);
+        if (s.offered[1]) src->add_sensors()->set_sensor_type(sensor::SENSOR_GEAR);
+        if (s.offered[2]) src->add_sensors()->set_sensor_type(sensor::SENSOR_PARKING_BRAKE);
+        if (s.offered[3] || s.offered[4]) src->add_sensors()->set_sensor_type(sensor::SENSOR_FUEL);
     }
     void onChannelOpenRequest(const ctl::ChannelOpenRequest &) override { openResponse(s, ch); ch->receive(shared_from_this()); }
     void onSensorStartRequest(const sensor::SensorRequest &) override {
@@ -446,10 +463,11 @@ struct Control : Base, aasdk::channel::control::IControlServiceChannelEventHandl
     void onChannelError(const Error &e) override { fail(e); }
 };
 
-static Session *start(JNIEnv *env, int fd, const Config &cfg, jobject listener) {
+static Session *start(JNIEnv *env, int fd, const Config &cfg, const jint *truck, jobject listener) {
     auto *s = new Session();
     s->cfg = cfg;
     s->listener.bind(env, listener);
+    for (int i = 0; i < 5; i++) { s->truck[i] = truck[i]; s->offered[i] = truck[i] != INT_MIN; }
 
     auto socket = std::make_shared<boost::asio::ip::tcp::socket>(s->io, boost::asio::ip::tcp::v4(), fd);
     auto endpoint = std::make_shared<aasdk::tcp::TCPEndpoint>(s->tcpWrapper, std::move(socket));
@@ -522,10 +540,11 @@ extern "C" {
 JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *) { gVm = vm; return JNI_VERSION_1_6; }
 
 // cfg = [resolution, codecW, codecH, marginW, marginH, dpi]
-JNIEXPORT jlong JNICALL Java_dev_autobridge_Native_start(JNIEnv *env, jobject, jint fd, jintArray cfgArr, jobject listener) {
-    jint c[6];
+JNIEXPORT jlong JNICALL Java_dev_autobridge_Native_start(JNIEnv *env, jobject, jint fd, jintArray cfgArr, jintArray truckArr, jobject listener) {
+    jint c[6], t[5];
     env->GetIntArrayRegion(cfgArr, 0, 6, c);
-    return (jlong) start(env, fd, Config{c[0], c[1], c[2], c[3], c[4], c[5]}, listener);
+    env->GetIntArrayRegion(truckArr, 0, 5, t);
+    return (jlong) start(env, fd, Config{c[0], c[1], c[2], c[3], c[4], c[5]}, t, listener);
 }
 
 JNIEXPORT void JNICALL Java_dev_autobridge_Native_stop(JNIEnv *, jobject, jlong h) { stop((Session *) h); }
@@ -565,9 +584,15 @@ JNIEXPORT void JNICALL Java_dev_autobridge_Native_mic(JNIEnv *env, jobject, jlon
     });
 }
 
-JNIEXPORT void JNICALL Java_dev_autobridge_Native_sensors(JNIEnv *, jobject, jlong h, jboolean moving, jboolean night) {
+JNIEXPORT void JNICALL Java_dev_autobridge_Native_sensors(JNIEnv *env, jobject, jlong h, jboolean moving, jboolean night, jintArray truckArr) {
     auto *s = (Session *) h;
-    s->strand.dispatch([s, moving, night] { s->moving = moving; s->night = night; s->sendSensors(); });
+    std::array<jint, 5> t;
+    env->GetIntArrayRegion(truckArr, 0, 5, t.data());
+    s->strand.dispatch([s, moving, night, t] {
+        s->moving = moving; s->night = night;
+        std::copy(t.begin(), t.end(), s->truck);
+        s->sendSensors();
+    });
 }
 
 JNIEXPORT void JNICALL Java_dev_autobridge_Native_videoFocus(JNIEnv *, jobject, jlong h, jboolean projected) {

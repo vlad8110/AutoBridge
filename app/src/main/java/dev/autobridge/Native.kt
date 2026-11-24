@@ -14,11 +14,12 @@ object Native {
         fun onEnded(reason: String)
     }
 
-    /** Takes ownership of [fd], a connected TCP socket. cfg = [resolution, codecW, codecH, marginW, marginH, dpi]. */
-    external fun start(fd: Int, cfg: IntArray, listener: Listener): Long
+    /** Takes ownership of [fd], a connected TCP socket. cfg = [resolution, codecW, codecH, marginW, marginH, dpi].
+     * truck = [Truck.toArray]; what is known at start is what Android Auto is told the car has. */
+    external fun start(fd: Int, cfg: IntArray, truck: IntArray, listener: Listener): Long
     external fun stop(handle: Long)
     external fun touch(handle: Long, action: Int, actionIndex: Int, ids: IntArray, xs: IntArray, ys: IntArray)
     external fun mic(handle: Long, pcm: ByteArray, length: Int)
-    external fun sensors(handle: Long, moving: Boolean, night: Boolean)
+    external fun sensors(handle: Long, moving: Boolean, night: Boolean, truck: IntArray)
     external fun videoFocus(handle: Long, projected: Boolean)
 }

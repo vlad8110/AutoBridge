@@ -152,6 +152,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private fun askPermissionsThenStart() {
         val wanted = buildList {
             add(Manifest.permission.RECORD_AUDIO)
+            add(android.car.Car.PERMISSION_SPEED)   // truck speed and battery, shown here and passed to Android Auto
+            add(android.car.Car.PERMISSION_ENERGY)
             if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.BLUETOOTH_CONNECT)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
         }.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }

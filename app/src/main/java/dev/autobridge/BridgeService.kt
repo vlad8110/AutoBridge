@@ -8,7 +8,10 @@ import android.app.NotificationManager
 import android.app.Service
 import android.bluetooth.BluetoothManager
 import android.car.Car
+import android.car.VehiclePropertyIds
 import android.car.drivingstate.CarUxRestrictionsManager
+import android.car.hardware.CarPropertyValue
+import android.car.hardware.property.CarPropertyManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -56,6 +59,8 @@ class BridgeService : Service() {
     private var decoder: VideoDecoder? = null
     private var car: Car? = null
     @Volatile private var moving = false
+    @Volatile private var truck = Truck()
+    private var truckLine: String? = null
     @Volatile private var running = true
     private val searching = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -172,7 +177,7 @@ class BridgeService : Service() {
             handle.takeIf { it != 0L }?.let { h -> Native.videoFocus(h, true) }
         }.also { d -> surface?.let { d.attach(it) } }
         audio.holdFocus()
-        handle = Native.start(fd, v.toArray(), Callbacks(++sessionId))
+        handle = Native.start(fd, v.toArray(), truck.toArray(), Callbacks(++sessionId))
         pushSensors()
         say("Android Auto connected")
     }
@@ -229,12 +234,41 @@ class BridgeService : Service() {
             val ux = car!!.getCarManager(Car.CAR_UX_RESTRICTION_SERVICE) as CarUxRestrictionsManager
             moving = ux.currentCarUxRestrictions.isRequiresDistractionOptimization
             ux.registerListener { r -> moving = r.isRequiresDistractionOptimization; pushSensors() }
+            watchTruck(car!!.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager)
         }.onFailure { Log.w(TAG, "no car service; reporting parked", it) }
+    }
+
+    /** Battery, range, speed, gear and parking brake. Whatever the truck refuses simply stays unknown. */
+    private fun watchTruck(props: CarPropertyManager) {
+        val callback = object : CarPropertyManager.CarPropertyEventCallback {
+            override fun onChangeEvent(v: CarPropertyValue<*>) {
+                if (v.status != CarPropertyValue.STATUS_AVAILABLE) return
+                val x = v.value
+                truck = when (v.propertyId) {
+                    VehiclePropertyIds.PERF_VEHICLE_SPEED -> truck.copy(speedMs = x as? Float)
+                    VehiclePropertyIds.GEAR_SELECTION -> truck.copy(gear = x as? Int)
+                    VehiclePropertyIds.PARKING_BRAKE_ON -> truck.copy(parkingBrake = x as? Boolean)
+                    VehiclePropertyIds.EV_BATTERY_LEVEL -> truck.copy(batteryWh = x as? Float)
+                    VehiclePropertyIds.INFO_EV_BATTERY_CAPACITY -> truck.copy(capacityWh = x as? Float)
+                    VehiclePropertyIds.RANGE_REMAINING -> truck.copy(rangeM = x as? Float)
+                    else -> truck
+                }
+                pushSensors()
+                val line = truck.line(miles = java.util.Locale.getDefault().country in setOf("US", "GB"))
+                if (line != truckLine) { truckLine = line; publish() }
+            }
+            override fun onErrorEvent(propertyId: Int, zone: Int) {}
+        }
+        for (id in listOf(VehiclePropertyIds.PERF_VEHICLE_SPEED, VehiclePropertyIds.GEAR_SELECTION, VehiclePropertyIds.PARKING_BRAKE_ON,
+            VehiclePropertyIds.EV_BATTERY_LEVEL, VehiclePropertyIds.INFO_EV_BATTERY_CAPACITY, VehiclePropertyIds.RANGE_REMAINING)) {
+            val rate = if (id == VehiclePropertyIds.PERF_VEHICLE_SPEED) 1f else CarPropertyManager.SENSOR_RATE_ONCHANGE
+            runCatching { props.registerCallback(callback, id, rate) }.onFailure { Log.w(TAG, "truck won't share property $id: $it") }
+        }
     }
 
     private fun pushSensors() {
         val night = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-        handle.takeIf { it != 0L }?.let { Native.sensors(it, moving, night) }
+        handle.takeIf { it != 0L }?.let { Native.sensors(it, moving, night, truck.toArray()) }
     }
 
     // ---- status ----
@@ -246,7 +280,11 @@ class BridgeService : Service() {
         Log.i(TAG, text)
         recent.addLast(text)
         if (recent.size > 6) recent.removeFirst()
-        val all = recent.joinToString("\n")
+        publish()
+    }
+
+    @Synchronized private fun publish() {
+        val all = (recent + listOfNotNull(truckLine)).joinToString("\n")
         status = all
         main.post { onStatus?.invoke(all) }
     }
