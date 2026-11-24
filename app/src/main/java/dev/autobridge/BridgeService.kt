@@ -218,10 +218,16 @@ class BridgeService : Service() {
 
     // ---- status ----
 
-    private fun say(text: String) {
+    private val recent = ArrayDeque<String>()
+
+    /** Shows the last few steps on screen, so a photo of the car screen tells where a connection stopped. */
+    @Synchronized private fun say(text: String) {
         Log.i(TAG, text)
-        status = text
-        main.post { onStatus?.invoke(text) }
+        recent.addLast(text)
+        if (recent.size > 6) recent.removeFirst()
+        val all = recent.joinToString("\n")
+        status = all
+        main.post { onStatus?.invoke(all) }
     }
 
     private fun notification(): Notification {
