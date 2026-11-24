@@ -36,10 +36,11 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
                 setPadding(48, 48, 48, 48)
-                addView(label(22f).apply { text = "Car Wi-Fi (for AutoBridge on the truck)" })
+                addView(label(22f).apply { text = "Wi-Fi this phone is on now" })
+                addView(label(14f).apply { text = "Join the truck's hotspot to see the details AutoBridge on the truck needs." })
                 addView(wifiText)
                 addView(refresh)
-                addView(copy)
+                addView(copy, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 24 })
                 addView(label(22f).apply { text = "Relay" })
                 addView(statusText)
                 addView(label(14f).apply { text = "Leave this installed; it starts by itself when the phone boots." })

@@ -14,7 +14,7 @@
     <application
         android:label="AutoBridge Phone"
         android:icon="@drawable/ic_bridge"
-        android:theme="@android:style/Theme.DeviceDefault">
+        android:theme="@style/AutoBridgePhone">
 
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>
