@@ -32,7 +32,7 @@ object Wireless {
     val CHANNELS = listOf(2412, 2437, 2462, 5180, 5200, 5220, 5240, 5745, 5765, 5785, 5805, 5825)
 
     private const val WPA2_PERSONAL = 5
-    private const val AP_DYNAMIC = 1
+    private const val AP_STATIC = 0  // the car hotspot is a fixed access point (matches what works on GM)
 
     data class Wifi(val ssid: String, val password: String, val bssid: String)
 
@@ -86,7 +86,7 @@ object Wireless {
 
     fun infoResponse(wifi: Wifi): ByteArray = Proto()
         .string(1, wifi.ssid).string(2, wifi.password).string(3, wifi.bssid.lowercase())
-        .varint(4, WPA2_PERSONAL.toLong()).varint(5, AP_DYNAMIC.toLong()).bytes()
+        .varint(4, WPA2_PERSONAL.toLong()).varint(5, AP_STATIC.toLong()).bytes()
 
     fun send(out: OutputStream, id: Int, payload: ByteArray) {
         val frame = byteArrayOf((payload.size shr 8).toByte(), payload.size.toByte(), (id shr 8).toByte(), id.toByte()) + payload
