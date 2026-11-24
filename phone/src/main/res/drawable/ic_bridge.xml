@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp" android:height="48dp" android:viewportWidth="48" android:viewportHeight="48">
+    <!-- A simple bridge: deck, two towers, cables -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M4,30h40v4H4z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M13,12h4v26h-4zM31,12h4v26h-4z" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="2" android:fillColor="#00000000"
+        android:pathData="M4,30Q15,14 15,14Q24,26 33,14Q33,14 44,30" />
+</vector>

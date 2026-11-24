@@ -7,3 +7,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "AutoBridge"
 include(":app")
+include(":phone")

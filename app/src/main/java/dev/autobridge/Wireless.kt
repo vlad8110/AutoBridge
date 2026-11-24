@@ -12,7 +12,13 @@ import java.io.OutputStream
  */
 object Wireless {
     const val UUID = "4de17a00-52cb-11e6-bdf4-0800200c9a66"
-    const val PORT = 5288  // default only; the car may already use it, so BridgeService advertises the port it actually got
+    const val PORT = 5288
+
+    // The car's hotspot blocks phone -> car connections, so the AutoBridge Phone app relays:
+    // Android Auto connects to the relay on its own phone (127.0.0.1:PHONE_AA_PORT) and the car
+    // connects out to the relay on PHONE_CAR_PORT. Must match phone/.../RelayService.kt.
+    const val PHONE_AA_PORT = 5299
+    const val PHONE_CAR_PORT = 5300
 
     const val START_REQUEST = 1
     const val INFO_REQUEST = 2
@@ -35,7 +41,10 @@ object Wireless {
      * Order matters: the version request is the only place the phone reads our TCP address from
      * (without it the phone joins the Wi-Fi but never connects), and the start request follows its reply.
      */
-    fun handshake(input: InputStream, output: OutputStream, ip: String, wifi: Wifi, port: Int = PORT, log: (String) -> Unit) {
+    fun handshake(
+        input: InputStream, output: OutputStream, ip: String, wifi: Wifi, port: Int = PORT,
+        onPhoneOnWifi: () -> Unit = {}, log: (String) -> Unit,
+    ) {
         val src = DataInputStream(input)
         send(output, VERSION_REQUEST, versionRequest(ip, port))
         log("Sent version and car address $ip:$port")
@@ -53,7 +62,11 @@ object Wireless {
                     log("Sent Wi-Fi ${wifi.ssid}")
                 }
                 START_RESPONSE -> log("Phone start response: status ${firstVarint(payload)}")
-                CONNECTION_STATUS -> log("Phone on Wi-Fi (status ${firstVarint(payload)}), waiting for it to connect to $ip:$port")
+                CONNECTION_STATUS -> {
+                    val status = firstVarint(payload)
+                    log("Phone Wi-Fi status: $status (0 = connected)")
+                    if (status == 0L) onPhoneOnWifi()
+                }
                 else -> log("Phone message $id (${payload.size} bytes)")
             }
         }
