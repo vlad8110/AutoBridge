@@ -59,7 +59,10 @@ AB_KEYSTORE=/path/upload.jks AB_KEYSTORE_PASSWORD=... \
 1. Turn on the car's Wi-Fi hotspot and note its name, password and BSSID (the access point's MAC address).
 2. Open AutoBridge, allow Nearby devices and Microphone, tap **Wi-Fi settings** and enter those three values.
 3. Install AutoBridge Phone on the phone and open it once (it then starts by itself after reboots).
-4. Pair your phone with the car over Bluetooth (once). With AutoBridge open, the phone's Android Auto connects by itself.
+4. Pair your phone with the car over Bluetooth (once). In the car's Bluetooth settings for the phone, keep
+   **Calls on** (call audio uses the car's hands-free) and turn **Media audio off**. Otherwise the car's own
+   Bluetooth music player takes the speakers and Android Auto music stops or goes silent.
+5. With AutoBridge open, the phone's Android Auto connects by itself.
 
 ## Not included (on purpose)
 
