@@ -34,7 +34,7 @@ Driving restrictions stay on: AutoBridge reports the car's real driving state to
 Needs the Android SDK with NDK 28.2 and CMake 3.22.1, JDK 17, and on the first build about 10 minutes for the native libraries.
 
 ```bash
-git clone --recurse-submodules https://github.com/<you>/AutoBridge.git
+git clone --recurse-submodules https://github.com/vlad8110/AutoBridge.git
 cd AutoBridge
 native/build-deps.sh                 # OpenSSL, protobuf, abseil, Boost headers for Android arm64
 ./gradlew :app:assembleDebug         # app/build/outputs/apk/debug/app-debug.apk
