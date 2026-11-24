@@ -23,7 +23,7 @@ import kotlin.concurrent.thread
  */
 class RelayService : Service() {
     companion object {
-        const val AA_PORT = 5299   // must match Wireless.PHONE_AA_PORT in the car app
+        const val AA_PORT = 5280   // must match Wireless.PHONE_AA_PORT in the car app
         const val CAR_PORT = 5300  // must match Wireless.PHONE_CAR_PORT in the car app
         @Volatile var status = "Starting…"
         var onStatus: ((String) -> Unit)? = null
@@ -103,9 +103,15 @@ class RelayService : Service() {
         copy(b, a)
     }
 
-    private fun say(text: String) {
+    private val recent = ArrayDeque<String>()
+
+    /** Keeps the last few steps on screen, so a screenshot shows which side never arrived. */
+    @Synchronized private fun say(text: String) {
         Log.i("AutoBridgePhone", text)
-        status = text
-        onStatus?.invoke(text)
+        val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
+        recent.addLast("$time  $text")
+        if (recent.size > 8) recent.removeFirst()
+        status = recent.joinToString("\n")
+        onStatus?.invoke(status)
     }
 }

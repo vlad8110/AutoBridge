@@ -17,7 +17,7 @@ object Wireless {
     // The car's hotspot blocks phone -> car connections, so the AutoBridge Phone app relays:
     // Android Auto connects to the relay on its own phone (127.0.0.1:PHONE_AA_PORT) and the car
     // connects out to the relay on PHONE_CAR_PORT. Must match phone/.../RelayService.kt.
-    const val PHONE_AA_PORT = 5299
+    const val PHONE_AA_PORT = 5280  // the phone may remember this port for the truck from earlier SierraLink use
     const val PHONE_CAR_PORT = 5300
 
     const val START_REQUEST = 1

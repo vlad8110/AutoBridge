@@ -16,7 +16,7 @@ the relay, and the relay joins the two.
 Phone (Android Auto)                         Car (AutoBridge)
   │  1. Bluetooth RFCOMM  ───────────────►  "I'm at 10.x.x.x:5288, join Wi-Fi <ssid>/<password>/<bssid>"
   │  2. joins the car's Wi-Fi hotspot
-  │  3. Android Auto → relay on the phone (127.0.0.1:5299)
+  │  3. Android Auto → relay on the phone (127.0.0.1:5280)
   │     car finds the relay on the hotspot and connects to it (:5300); relay joins the two
   │                                          aasdk: version, TLS handshake, service discovery
   │  4. H.264 video, PCM audio  ─────────►  MediaCodec → screen, AudioTrack → car speakers
