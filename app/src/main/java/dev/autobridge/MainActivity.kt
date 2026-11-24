@@ -7,6 +7,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
 import android.text.InputType
@@ -28,21 +29,28 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var surface: SurfaceView
     private lateinit var panel: LinearLayout
     private lateinit var status: TextView
+    private var statusText = ""
+    private var cursorOn = true
+    private val blink = object : Runnable {
+        override fun run() { cursorOn = !cursorOn; status.text = Console.render(statusText, cursorOn); status.postDelayed(this, 500) }
+    }
+
+    private fun show(text: String) { statusText = text; status.text = Console.render(text, cursorOn) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         surface = SurfaceView(this).apply { holder.addCallback(this@MainActivity) }
-        status = TextView(this).apply { textSize = 22f; setTextColor(Color.WHITE); gravity = Gravity.CENTER }
-        val settings = Button(this).apply { text = "Wi-Fi settings"; textSize = 20f; setOnClickListener { editWifi() } }
+        // The waiting screen looks like a Linux console: monospace, coloured status tags, blinking cursor.
+        status = TextView(this).apply { textSize = 20f; typeface = Typeface.MONOSPACE; setLineSpacing(8f, 1f) }
+        val settings = Button(this).apply { text = "Wi-Fi settings"; textSize = 18f; typeface = Typeface.MONOSPACE; setOnClickListener { editWifi() } }
         panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setBackgroundColor(Color.BLACK)
-            addView(TextView(context).apply { text = "AutoBridge"; textSize = 40f; setTextColor(Color.WHITE); gravity = Gravity.CENTER })
-            addView(status, LinearLayout.LayoutParams(-2, -2).apply { setMargins(0, 32, 0, 32) })
-            addView(settings)
+            setBackgroundColor(Console.BACKGROUND)
+            setPadding(64, 48, 64, 48)
+            addView(status, LinearLayout.LayoutParams(-1, 0, 1f))
+            addView(settings, LinearLayout.LayoutParams(-2, -2))
         }
         root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -60,14 +68,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onResume() {
         super.onResume()
-        BridgeService.onStatus = { status.text = it }
+        BridgeService.onStatus = { show(it) }
         BridgeService.onVideoActive = { active -> panel.visibility = if (active) View.GONE else View.VISIBLE; fitSurface() }
-        status.text = BridgeService.status
-        if (Settings(this).wifi() == null) status.text = "First, enter your car's Wi-Fi hotspot details."
+        show(BridgeService.status)
+        if (Settings(this).wifi() == null) show("First, enter your car's Wi-Fi hotspot details.")
         panel.visibility = if (BridgeService.instance?.video != null) View.GONE else View.VISIBLE
+        status.postDelayed(blink, 500)
     }
 
     override fun onPause() {
+        status.removeCallbacks(blink)
         BridgeService.onStatus = null
         BridgeService.onVideoActive = null
         super.onPause()
@@ -131,10 +141,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             .setPositiveButton("Save") { _, _ ->
                 val mac = bssid.text.toString().trim()
                 if (!Regex("([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}").matches(mac)) {
-                    status.text = "BSSID must look like 02:1a:2b:3c:4d:5e"; return@setPositiveButton
+                    show("BSSID must look like 02:1a:2b:3c:4d:5e"); return@setPositiveButton
                 }
                 s.ssid = ssid.text.toString(); s.password = pass.text.toString(); s.bssid = mac
-                status.text = "Saved. Waiting for phone…"
+                show("Saved. Waiting for phone…")
             }
             .setNegativeButton("Cancel", null).show()
     }
@@ -150,7 +160,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         val bt = Build.VERSION.SDK_INT < 31 || checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
-        if (bt) startService() else status.text = "AutoBridge needs the Nearby devices (Bluetooth) permission."
+        if (bt) startService() else show("AutoBridge needs the Nearby devices (Bluetooth) permission.")
     }
 
     private fun startService() {
