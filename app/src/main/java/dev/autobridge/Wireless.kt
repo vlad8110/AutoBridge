@@ -12,7 +12,7 @@ import java.io.OutputStream
  */
 object Wireless {
     const val UUID = "4de17a00-52cb-11e6-bdf4-0800200c9a66"
-    const val PORT = 5288
+    const val PORT = 5288  // default only; the car may already use it, so BridgeService advertises the port it actually got
 
     const val START_REQUEST = 1
     const val INFO_REQUEST = 2
@@ -35,10 +35,10 @@ object Wireless {
      * Order matters: the version request is the only place the phone reads our TCP address from
      * (without it the phone joins the Wi-Fi but never connects), and the start request follows its reply.
      */
-    fun handshake(input: InputStream, output: OutputStream, ip: String, wifi: Wifi, log: (String) -> Unit) {
+    fun handshake(input: InputStream, output: OutputStream, ip: String, wifi: Wifi, port: Int = PORT, log: (String) -> Unit) {
         val src = DataInputStream(input)
-        send(output, VERSION_REQUEST, versionRequest(ip))
-        log("Sent version and car address $ip:$PORT")
+        send(output, VERSION_REQUEST, versionRequest(ip, port))
+        log("Sent version and car address $ip:$port")
         while (true) {
             val len = src.readUnsignedShort()
             val id = src.readUnsignedShort()
@@ -46,29 +46,29 @@ object Wireless {
             when (id) {
                 VERSION_RESPONSE -> {
                     log("Phone version reply (${payload.size} bytes)")
-                    send(output, START_REQUEST, startRequest(ip, wifi))
+                    send(output, START_REQUEST, startRequest(ip, wifi, port))
                 }
                 INFO_REQUEST -> {
                     send(output, INFO_RESPONSE, infoResponse(wifi))
                     log("Sent Wi-Fi ${wifi.ssid}")
                 }
                 START_RESPONSE -> log("Phone start response: status ${firstVarint(payload)}")
-                CONNECTION_STATUS -> log("Phone on Wi-Fi (status ${firstVarint(payload)}), waiting for it to connect to $ip:$PORT")
+                CONNECTION_STATUS -> log("Phone on Wi-Fi (status ${firstVarint(payload)}), waiting for it to connect to $ip:$port")
                 else -> log("Phone message $id (${payload.size} bytes)")
             }
         }
     }
 
-    private fun endpoint(ip: String) = Proto().string(1, ip).varint(2, PORT.toLong()).bytes()
+    private fun endpoint(ip: String, port: Int) = Proto().string(1, ip).varint(2, port.toLong()).bytes()
 
-    fun versionRequest(ip: String): ByteArray = Proto().varint(1, 4).varint(2, 1).message(6, endpoint(ip)).bytes()
+    fun versionRequest(ip: String, port: Int = PORT): ByteArray = Proto().varint(1, 4).varint(2, 1).message(6, endpoint(ip, port)).bytes()
 
-    fun startRequest(ip: String, wifi: Wifi): ByteArray {
+    fun startRequest(ip: String, wifi: Wifi, port: Int = PORT): ByteArray {
         val ap = Proto().string(1, wifi.ssid).string(2, wifi.password).string(3, wifi.bssid.lowercase())
             .varint(4, WPA2_PERSONAL.toLong())
         CHANNELS.forEach { ap.varint(6, it.toLong()) }
-        return Proto().string(1, ip).varint(2, PORT.toLong()).varint(3, 0)
-            .message(4, endpoint(ip)).message(5, ap.bytes()).bytes()
+        return Proto().string(1, ip).varint(2, port.toLong()).varint(3, 0)
+            .message(4, endpoint(ip, port)).message(5, ap.bytes()).bytes()
     }
 
     fun infoResponse(wifi: Wifi): ByteArray = Proto()

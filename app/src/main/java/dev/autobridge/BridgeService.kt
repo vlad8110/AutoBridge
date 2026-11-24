@@ -58,6 +58,7 @@ class BridgeService : Service() {
     @Volatile private var moving = false
     @Volatile private var running = true
     private var tcp: ServerSocket? = null
+    @Volatile private var tcpPort = 0  // 0 until the TCP server is listening
 
     override fun onBind(intent: Intent?) = null
 
@@ -102,9 +103,10 @@ class BridgeService : Service() {
                         socket.use {
                             val wifi = prefs.wifi() ?: return@thread say("Set the Wi-Fi details in AutoBridge settings")
                             val ip = carIp() ?: return@thread say("Car Wi-Fi hotspot is off (no address found)")
+                            val port = tcpPort.takeIf { p -> p != 0 } ?: return@thread say("TCP server is not listening yet")
                             say("Phone ${it.remoteDevice.name ?: "?"} connected over Bluetooth")
                             try {
-                                Wireless.handshake(it.inputStream, it.outputStream, ip, wifi, ::say)
+                                Wireless.handshake(it.inputStream, it.outputStream, ip, wifi, port, ::say)
                             } catch (_: IOException) { /* phone closed RFCOMM, normal after Wi-Fi joins */ }
                         }
                     }
@@ -122,9 +124,13 @@ class BridgeService : Service() {
                 ServerSocket().use { server ->
                     tcp = server
                     server.reuseAddress = true
-                    server.bind(InetSocketAddress(Wireless.PORT))
+                    // Any free port: the car's own services may hold the standard 5288.
+                    server.bind(InetSocketAddress(0))
+                    tcpPort = server.localPort
+                    say("Listening for Android Auto on port $tcpPort")
                     while (running) {
                         val socket = server.accept()
+                        say("Phone connected from ${socket.inetAddress.hostAddress}")
                         socket.tcpNoDelay = true
                         val fd = ParcelFileDescriptor.fromSocket(socket).detachFd()  // native side owns this copy
                         socket.close()
@@ -132,7 +138,8 @@ class BridgeService : Service() {
                     }
                 }
             } catch (e: IOException) {
-                if (running) { Log.w(TAG, "tcp", e); Thread.sleep(2000) }
+                tcpPort = 0
+                if (running) { say("TCP server error: ${e.message}"); Thread.sleep(2000) }
             }
         }
     }
