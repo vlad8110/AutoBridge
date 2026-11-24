@@ -28,8 +28,14 @@ object Wireless {
     const val CONNECTION_STATUS = 6
     const val START_RESPONSE = 7
 
-    // Wi-Fi channels (MHz) we tell the phone the hotspot may use; it gives up if none match its own.
-    val CHANNELS = listOf(2412, 2437, 2462, 5180, 5200, 5220, 5240, 5745, 5765, 5785, 5805, 5825)
+    /**
+     * Every legal 20 MHz Wi-Fi channel (as MHz). The phone intersects this with what it supports and
+     * gives up if nothing matches, so listing them all means any truck's hotspot channel works with
+     * no setting: 2.4 GHz 1-13, 5 GHz 36-177 (incl. DFS), 6 GHz 1-233.
+     */
+    val CHANNELS: List<Int> = (1..13).map { 2407 + 5 * it } +
+        (listOf(36, 40, 44, 48, 52, 56, 60, 64) + (100..144 step 4) + (149..177 step 4)).map { 5000 + 5 * it } +
+        (1..233 step 4).map { 5950 + 5 * it }
 
     private const val WPA2_PERSONAL = 5
     private const val AP_STATIC = 0  // the car hotspot is a fixed access point (matches what works on GM)

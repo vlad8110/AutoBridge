@@ -50,4 +50,14 @@ class WirelessTest {
         val p = byteArrayOf(0x08) + byteArrayOf(-3, -1, -1, -1, -1, -1, -1, -1, -1, 1)
         assertEquals(-3L, Wireless.firstVarint(p))
     }
+
+    @Test fun channelListCoversEveryBand() {
+        val c = Wireless.CHANNELS
+        assert(2412 in c && 2472 in c)                    // 2.4 GHz channels 1 and 13
+        assert(5240 in c && 5500 in c && 5885 in c)       // 5 GHz 48, DFS 100, 177
+        assert(5955 in c && 7115 in c)                    // 6 GHz 1 and 233
+        assert(c.toSet().size == c.size)
+        // the start request must still fit in one frame (u16 length)
+        assert(Wireless.startRequest("127.0.0.1", Wireless.Wifi("MyTruck", "x", "02:1a:2b:3c:4d:5e")).size < 65535)
+    }
 }
