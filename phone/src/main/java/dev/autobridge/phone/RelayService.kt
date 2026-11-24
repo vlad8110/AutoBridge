@@ -85,6 +85,8 @@ class RelayService : Service() {
     private fun startAndroidAuto() {
         say("Starting Android Auto")
         val aa = "com.google.android.projection.gearhead"
+        val version = runCatching { packageManager.getPackageInfo(aa, 0).versionName }.getOrNull()
+        say("Android Auto version: ${version ?: "not found"}")
         runCatching {
             sendBroadcast(Intent("com.google.android.apps.auto.wireless.setup.receiver.wirelessstartup.START")
                 .setClassName(aa, "com.google.android.apps.auto.wireless.setup.receiver.WirelessStartupReceiver")

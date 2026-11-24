@@ -9,6 +9,11 @@
     <!-- Lets the relay open Android Auto's start screen from the background when the car connects. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
+    <!-- Android 11+ hides other apps unless declared; we open Android Auto's wireless start screen. -->
+    <queries>
+        <package android:name="com.google.android.projection.gearhead" />
+    </queries>
+
     <application
         android:label="AutoBridge Phone"
         android:icon="@drawable/ic_bridge"
