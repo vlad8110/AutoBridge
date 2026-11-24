@@ -64,7 +64,7 @@ class BridgeService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        audio = AudioOut(getSystemService(AudioManager::class.java))
+        audio = AudioOut(getSystemService(AudioManager::class.java)) { say("The car took the speakers (another audio source started)") }
         var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
             types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
@@ -168,6 +168,7 @@ class BridgeService : Service() {
         val v = Display.config(this)
         video = v
         decoder = VideoDecoder(v.codecW, v.codecH).also { d -> surface?.let { d.attach(it) } }
+        audio.holdFocus()
         handle = Native.start(fd, v.toArray(), Callbacks(++sessionId))
         pushSensors()
         say("Android Auto connected")

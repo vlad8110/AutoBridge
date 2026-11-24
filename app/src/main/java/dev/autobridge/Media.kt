@@ -71,33 +71,45 @@ class VideoDecoder(private val width: Int, private val height: Int) {
     }
 }
 
-/** One AudioTrack per Android Auto stream, with car audio focus while it plays. */
-class AudioOut(private val audio: AudioManager) {
-    private class Stream(val rate: Int, val stereo: Boolean, val usage: Int, val focus: Int?)
+/**
+ * One AudioTrack per Android Auto stream. Car audio focus is taken once for the whole session and
+ * held: giving it back between songs lets the car switch to its own source (e.g. Bluetooth audio),
+ * which pauses the phone or silences us. AAOS mixes navigation/system sounds by their usage.
+ */
+class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> Unit) {
+    private class Stream(val rate: Int, val stereo: Boolean, val usage: Int)
     private val streams = arrayOf(
-        Stream(48000, true, AudioAttributes.USAGE_MEDIA, AudioManager.AUDIOFOCUS_GAIN),
-        Stream(16000, false, AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK),
-        Stream(16000, false, AudioAttributes.USAGE_ASSISTANCE_SONIFICATION, null),
+        Stream(48000, true, AudioAttributes.USAGE_MEDIA),
+        Stream(16000, false, AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE),
+        Stream(16000, false, AudioAttributes.USAGE_ASSISTANCE_SONIFICATION),
     )
     private val tracks = arrayOfNulls<AudioTrack>(3)
-    private val focus = arrayOfNulls<AudioFocusRequest>(3)
+    private var focus: AudioFocusRequest? = null
 
-    fun state(stream: Int, playing: Boolean) {
-        val s = streams[stream]
-        val attrs = AudioAttributes.Builder().setUsage(s.usage).setContentType(
-            if (stream == 0) AudioAttributes.CONTENT_TYPE_MUSIC else AudioAttributes.CONTENT_TYPE_SPEECH).build()
+    /** Take the car's media focus for the session. */
+    fun holdFocus() {
+        if (focus != null) return
+        val attrs = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build()
+        focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN).setAudioAttributes(attrs)
+            .setAcceptsDelayedFocusGain(true)
+            .setOnAudioFocusChangeListener { change ->
+                if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT) onFocusLost()
+            }.build().also { audio.requestAudioFocus(it) }
+    }
+
+    @Synchronized fun state(stream: Int, playing: Boolean) {
         if (playing) {
-            s.focus?.let { f -> focus[stream] = AudioFocusRequest.Builder(f).setAudioAttributes(attrs).build().also { audio.requestAudioFocus(it) } }
-            if (tracks[stream] == null) {
-                val mask = if (s.stereo) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
-                val min = AudioTrack.getMinBufferSize(s.rate, mask, AudioFormat.ENCODING_PCM_16BIT)
-                tracks[stream] = AudioTrack.Builder().setAudioAttributes(attrs)
-                    .setAudioFormat(AudioFormat.Builder().setSampleRate(s.rate).setChannelMask(mask).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
-                    .setBufferSizeInBytes(min * 4).build().apply { play() }
-            }
+            if (tracks[stream] != null) return
+            val s = streams[stream]
+            val attrs = AudioAttributes.Builder().setUsage(s.usage).setContentType(
+                if (stream == 0) AudioAttributes.CONTENT_TYPE_MUSIC else AudioAttributes.CONTENT_TYPE_SPEECH).build()
+            val mask = if (s.stereo) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
+            val min = AudioTrack.getMinBufferSize(s.rate, mask, AudioFormat.ENCODING_PCM_16BIT)
+            tracks[stream] = AudioTrack.Builder().setAudioAttributes(attrs)
+                .setAudioFormat(AudioFormat.Builder().setSampleRate(s.rate).setChannelMask(mask).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
+                .setBufferSizeInBytes(min * 4).build().apply { play() }
         } else {
-            focus[stream]?.let { audio.abandonAudioFocusRequest(it) }
-            focus[stream] = null
             tracks[stream]?.run { stop(); release() }
             tracks[stream] = null
         }
@@ -108,7 +120,12 @@ class AudioOut(private val audio: AudioManager) {
         tracks[stream]?.write(pcm, 0, pcm.size)
     }
 
-    fun release() = (0..2).forEach { state(it, false) }
+    /** End of session: stop everything and give focus back. */
+    fun release() {
+        (0..2).forEach { state(it, false) }
+        focus?.let { audio.abandonAudioFocusRequest(it) }
+        focus = null
+    }
 }
 
 /** 16 kHz mono microphone, read in 20 ms chunks while Android Auto has it open. */
