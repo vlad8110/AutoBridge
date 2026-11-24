@@ -1,0 +1,10 @@
+.gradle/
+build/
+.cxx/
+local.properties
+*.jks
+native/deps/
+native/deps-src/
+native/build-deps.log
+.DS_Store
+build*.log
