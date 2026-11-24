@@ -90,15 +90,16 @@ struct Listener {
 };
 
 // Send result handler: any real send error ends the session.
-static SendPromise::Pointer promise(Session &s);
-static void fail(Session &s, const Error &e);
+static SendPromise::Pointer promise(Session &s, const char *what);
+static void fail(Session &s, const Error &e, const char *what);
 
 // Shared bits every channel handler needs.
 struct Base {
     Session &s;
-    explicit Base(Session &session) : s(session) {}
-    SendPromise::Pointer promise() { return ::promise(s); }
-    void fail(const Error &e) { ::fail(s, e); }
+    const char *name;  // shown in the error, so a photo of the screen says which part failed
+    Base(Session &session, const char *name) : s(session), name(name) {}
+    SendPromise::Pointer promise() { return ::promise(s, name); }
+    void fail(const Error &e) { ::fail(s, e, name); }
 };
 
 class Session {
@@ -122,7 +123,7 @@ public:
     std::shared_ptr<aasdk::channel::sensorsource::SensorSourceService> sensorChannel;
     std::shared_ptr<aasdk::channel::mediasource::IMediaSourceService> micChannel;
     std::shared_ptr<aasdk::channel::mediasink::video::IVideoMediaSinkService> videoChannel;
-    bool moving = false, night = false, micOpen = false, sensorsReady = false, videoReady = false;
+    bool moving = false, night = false, micOpen = false, sensorsReady = false, videoReady = false, inputReady = false;
 
     void end(const std::string &why) {
         if (ended.exchange(true)) return;
@@ -134,7 +135,7 @@ public:
         JNIEnv *env;
         gVm->AttachCurrentThread(&env, nullptr);
         listener.env = env;
-        try { io.run(); } catch (const std::exception &e) { end(e.what()); }
+        try { io.run(); } catch (const std::exception &e) { end(std::string("session: ") + e.what()); }
         env->DeleteGlobalRef(listener.obj);
         gVm->DetachCurrentThread();
     }
@@ -145,7 +146,7 @@ public:
         // Bit flags from DrivingStatus: while moving, block keyboard, settings and long messages; video stays on.
         batch.add_driving_status_data()->set_status(moving ? (2 | 8 | 16) : 0);
         batch.add_night_mode_data()->set_night_mode(night);
-        sensorChannel->sendSensorEventIndication(batch, ::promise(*this));
+        sensorChannel->sendSensorEventIndication(batch, ::promise(*this, "sensors"));
     }
 
     void sendVideoFocus(bool projected, bool unsolicited) {
@@ -153,26 +154,26 @@ public:
         media::video::message::VideoFocusNotification n;
         n.set_focus(projected ? media::video::message::VIDEO_FOCUS_PROJECTED : media::video::message::VIDEO_FOCUS_NATIVE);
         n.set_unsolicited(unsolicited);
-        videoChannel->sendVideoFocusIndication(n, ::promise(*this));
+        videoChannel->sendVideoFocusIndication(n, ::promise(*this, "video focus"));
     }
 };
 
-static SendPromise::Pointer promise(Session &s) {
+static SendPromise::Pointer promise(Session &s, const char *what) {
     auto p = SendPromise::defer(s.strand);
     Session *sp = &s;
-    p->then([] {}, [sp](const Error &e) { fail(*sp, e); });
+    p->then([] {}, [sp, what](const Error &e) { fail(*sp, e, what); });
     return p;
 }
 
-static void fail(Session &s, const Error &e) {
-    if (e.getCode() != aasdk::error::ErrorCode::OPERATION_ABORTED) s.end(e.what());
+static void fail(Session &s, const Error &e, const char *what) {
+    if (e.getCode() != aasdk::error::ErrorCode::OPERATION_ABORTED) s.end(std::string(what) + ": " + e.what());
 }
 
 template <typename C>
 static void openResponse(Session &s, C &channel) {
     ctl::ChannelOpenResponse r;
     r.set_status(aap_protobuf::shared::STATUS_SUCCESS);
-    channel->sendChannelOpenResponse(r, ::promise(s));
+    channel->sendChannelOpenResponse(r, ::promise(s, "channel open"));
 }
 
 // ---- Video ----
@@ -180,7 +181,7 @@ struct Video : Base, aasdk::channel::mediasink::video::IVideoMediaSinkServiceEve
                std::enable_shared_from_this<Video> {
     std::shared_ptr<aasdk::channel::mediasink::video::channel::VideoChannel> ch;
     int32_t sessionId = 0;
-    Video(Session &s) : Base(s), ch(std::make_shared<aasdk::channel::mediasink::video::channel::VideoChannel>(s.strand, s.messenger)) {}
+    Video(Session &s) : Base(s, "video"), ch(std::make_shared<aasdk::channel::mediasink::video::channel::VideoChannel>(s.strand, s.messenger)) {}
 
     void fill(ctl::ServiceDiscoveryResponse &r) {
         auto *svc = r.add_channels();
@@ -233,7 +234,7 @@ struct Audio : Base, aasdk::channel::mediasink::audio::IAudioMediaSinkServiceEve
     int stream, rate, channels;
     int32_t sessionId = 0;
     Audio(Session &s, int stream, std::shared_ptr<aasdk::channel::mediasink::audio::AudioMediaSinkService> c, int rate, int channels)
-        : Base(s), ch(std::move(c)), stream(stream), rate(rate), channels(channels) {}
+        : Base(s, "audio"), ch(std::move(c)), stream(stream), rate(rate), channels(channels) {}
 
     void fill(ctl::ServiceDiscoveryResponse &r) {
         using T = media::sink::message::AudioStreamType;
@@ -283,7 +284,7 @@ struct Audio : Base, aasdk::channel::mediasink::audio::IAudioMediaSinkServiceEve
 // ---- Microphone (Google Assistant, voice replies) ----
 struct Mic : Base, aasdk::channel::mediasource::IMediaSourceServiceEventHandler, std::enable_shared_from_this<Mic> {
     std::shared_ptr<aasdk::channel::mediasource::audio::MicrophoneAudioChannel> ch;
-    Mic(Session &s) : Base(s), ch(std::make_shared<aasdk::channel::mediasource::audio::MicrophoneAudioChannel>(s.strand, s.messenger)) {}
+    Mic(Session &s) : Base(s, "mic"), ch(std::make_shared<aasdk::channel::mediasource::audio::MicrophoneAudioChannel>(s.strand, s.messenger)) {}
 
     void fill(ctl::ServiceDiscoveryResponse &r) {
         auto *svc = r.add_channels();
@@ -320,7 +321,7 @@ struct Mic : Base, aasdk::channel::mediasource::IMediaSourceServiceEventHandler,
 // ---- Touch input ----
 struct Input : Base, aasdk::channel::inputsource::IInputSourceServiceEventHandler, std::enable_shared_from_this<Input> {
     std::shared_ptr<aasdk::channel::inputsource::InputSourceService> ch;
-    Input(Session &s) : Base(s), ch(std::make_shared<aasdk::channel::inputsource::InputSourceService>(s.strand, s.messenger)) {}
+    Input(Session &s) : Base(s, "touch"), ch(std::make_shared<aasdk::channel::inputsource::InputSourceService>(s.strand, s.messenger)) {}
 
     void fill(ctl::ServiceDiscoveryResponse &r) {
         auto *svc = r.add_channels();
@@ -329,7 +330,11 @@ struct Input : Base, aasdk::channel::inputsource::IInputSourceServiceEventHandle
         t->set_width(s.cfg.codecW);
         t->set_height(s.cfg.codecH);
     }
-    void onChannelOpenRequest(const ctl::ChannelOpenRequest &) override { openResponse(s, ch); ch->receive(shared_from_this()); }
+    void onChannelOpenRequest(const ctl::ChannelOpenRequest &) override {
+        openResponse(s, ch);
+        s.inputReady = true;
+        ch->receive(shared_from_this());
+    }
     void onKeyBindingRequest(const media::sink::message::KeyBindingRequest &) override {
         media::sink::message::KeyBindingResponse r;
         r.set_status(aap_protobuf::shared::STATUS_SUCCESS);
@@ -342,7 +347,7 @@ struct Input : Base, aasdk::channel::inputsource::IInputSourceServiceEventHandle
 // ---- Sensors: driving status (required by Android Auto) and night mode ----
 struct Sensors : Base, aasdk::channel::sensorsource::ISensorSourceServiceEventHandler, std::enable_shared_from_this<Sensors> {
     std::shared_ptr<aasdk::channel::sensorsource::SensorSourceService> ch;
-    Sensors(Session &s) : Base(s), ch(std::make_shared<aasdk::channel::sensorsource::SensorSourceService>(s.strand, s.messenger)) {}
+    Sensors(Session &s) : Base(s, "sensors"), ch(std::make_shared<aasdk::channel::sensorsource::SensorSourceService>(s.strand, s.messenger)) {}
 
     void fill(ctl::ServiceDiscoveryResponse &r) {
         auto *svc = r.add_channels();
@@ -367,7 +372,7 @@ struct Sensors : Base, aasdk::channel::sensorsource::ISensorSourceServiceEventHa
 struct Control : Base, aasdk::channel::control::IControlServiceChannelEventHandler, std::enable_shared_from_this<Control> {
     std::shared_ptr<aasdk::channel::control::ControlServiceChannel> ch;
     std::function<void(ctl::ServiceDiscoveryResponse &)> fillAll;
-    Control(Session &s) : Base(s), ch(std::make_shared<aasdk::channel::control::ControlServiceChannel>(s.strand, s.messenger)) {}
+    Control(Session &s) : Base(s, "control"), ch(std::make_shared<aasdk::channel::control::ControlServiceChannel>(s.strand, s.messenger)) {}
 
     void start() {
         ch->sendVersionRequest(promise());
@@ -543,7 +548,8 @@ JNIEXPORT void JNICALL Java_dev_autobridge_Native_touch(JNIEnv *env, jobject, jl
         p->set_y(y[i]);
         p->set_pointer_id(id[i]);
     }
-    s->strand.dispatch([s, report] { if (s->inputChannel) s->inputChannel->sendInputReport(report, ::promise(*s)); });
+    // Touches before the phone opens the input channel would be encrypted before TLS is up; drop them.
+    s->strand.dispatch([s, report] { if (s->inputReady) s->inputChannel->sendInputReport(report, ::promise(*s, "touch")); });
 }
 
 JNIEXPORT void JNICALL Java_dev_autobridge_Native_mic(JNIEnv *env, jobject, jlong h, jbyteArray pcm, jint len) {
@@ -553,7 +559,7 @@ JNIEXPORT void JNICALL Java_dev_autobridge_Native_mic(JNIEnv *env, jobject, jlon
     uint64_t ts = std::chrono::duration_cast<std::chrono::microseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
     s->strand.dispatch([s, data = std::move(data), ts] {
-        if (s->micOpen) s->micChannel->sendMediaSourceWithTimestampIndication(ts, data, ::promise(*s));
+        if (s->micOpen) s->micChannel->sendMediaSourceWithTimestampIndication(ts, data, ::promise(*s, "mic"));
     });
 }
 
