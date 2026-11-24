@@ -19,7 +19,7 @@
     <application
         android:label="AutoBridge"
         android:icon="@drawable/ic_bridge"
-        android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
+        android:theme="@style/AutoBridge">
 
         <activity
             android:name=".MainActivity"
