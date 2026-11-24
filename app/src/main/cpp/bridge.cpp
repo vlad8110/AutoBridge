@@ -326,9 +326,11 @@ struct Input : Base, aasdk::channel::inputsource::IInputSourceServiceEventHandle
     void fill(ctl::ServiceDiscoveryResponse &r) {
         auto *svc = r.add_channels();
         svc->set_id((int) ch->getId());
+        // The touch panel is the visible area (video frame minus the cropped margins);
+        // Android Auto maps touches onto its UI area, not the whole frame.
         auto *t = svc->mutable_input_source_service()->add_touchscreen();
-        t->set_width(s.cfg.codecW);
-        t->set_height(s.cfg.codecH);
+        t->set_width(s.cfg.codecW - s.cfg.marginW);
+        t->set_height(s.cfg.codecH - s.cfg.marginH);
     }
     void onChannelOpenRequest(const ctl::ChannelOpenRequest &) override {
         openResponse(s, ch);

@@ -9,15 +9,16 @@ class DisplayTest {
         assertEquals(3, c.resolution)
         assertEquals(0, c.marginW)
         assertEquals(1080 - 720, c.marginH)   // 1920 / 2.667 = 720 rows of content
-        assertEquals(Pair(0, 180), c.toCodec(0f, 0f, 2400, 900))
-        assertEquals(Pair(1920, 900), c.toCodec(2400f, 900f, 2400, 900))
+        // touch space is the visible 1920x720 area: corners map to its corners
+        assertEquals(Pair(0, 0), c.toTouch(0f, 0f, 2400, 900))
+        assertEquals(Pair(1920, 720), c.toTouch(2400f, 900f, 2400, 900))
     }
 
     @Test fun squarishScreenGetsSideMargins() {
         val c = Display.pick(1600, 1200, 160) // 4:3
         assertEquals(1920 - 1440, c.marginW)
         assertEquals(0, c.marginH)
-        assertEquals(Pair(960, 540), c.toCodec(800f, 600f, 1600, 1200))
+        assertEquals(Pair(720, 540), c.toTouch(800f, 600f, 1600, 1200))  // centre of the 1440x1080 visible area
     }
 
     @Test fun portraitScreenUsesPortraitStream() {

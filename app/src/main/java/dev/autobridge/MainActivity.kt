@@ -105,7 +105,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         val xs = IntArray(n)
         val ys = IntArray(n)
         for (i in 0 until n) {
-            val (x, y) = v.toCodec(e.getX(i), e.getY(i), view.width, view.height)
+            val (x, y) = v.toTouch(e.getX(i), e.getY(i), view.width, view.height)
             xs[i] = x; ys[i] = y
         }
         service.touch(action, e.actionIndex, ids, xs, ys)

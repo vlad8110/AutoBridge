@@ -11,11 +11,14 @@ import kotlin.math.roundToInt
 data class VideoConfig(val resolution: Int, val codecW: Int, val codecH: Int, val marginW: Int, val marginH: Int, val dpi: Int) {
     val contentW get() = codecW - marginW
     val contentH get() = codecH - marginH
-    fun toArray() = intArrayOf(resolution, codecW, codecH, marginW, marginH, dpi)
+    fun toArray() = intArrayOf(resolution, codecW, codecH, marginW, marginH, dpi)  // read by bridge.cpp in this order
 
-    /** Screen point -> phone touch coordinate (in the full video frame, margins included). */
-    fun toCodec(x: Float, y: Float, viewW: Int, viewH: Int) =
-        Pair((marginW / 2 + x * contentW / viewW).roundToInt(), (marginH / 2 + y * contentH / viewH).roundToInt())
+    /**
+     * Screen point -> phone touch coordinate. The touchscreen we advertise is the visible content
+     * area (the frame minus margins), like a real car's touch panel, so no margin offset applies.
+     */
+    fun toTouch(x: Float, y: Float, viewW: Int, viewH: Int) =
+        Pair((x * contentW / viewW).roundToInt(), (y * contentH / viewH).roundToInt())
 }
 
 object Display {
