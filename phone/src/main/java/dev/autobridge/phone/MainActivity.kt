@@ -15,12 +15,12 @@ import android.widget.TextView
 /** Just starts the relay and shows what it's doing. */
 class MainActivity : Activity() {
     private lateinit var text: TextView
-    private lateinit var overlay: Button
+    private lateinit var allowButton: Button
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         text = TextView(this).apply { textSize = 18f; gravity = Gravity.CENTER; setPadding(48, 48, 48, 48) }
-        overlay = Button(this).apply {
+        allowButton = Button(this).apply {
             text = "Allow AutoBridge to open Android Auto"
             setOnClickListener {
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
@@ -30,7 +30,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             addView(text)
-            addView(overlay)
+            addView(allowButton)
         })
         if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
         RelayService.start(this)
@@ -39,7 +39,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         // "Appear on top" is what lets the relay open Android Auto while the phone is in a pocket.
-        overlay.visibility = if (Settings.canDrawOverlays(this)) android.view.View.GONE else android.view.View.VISIBLE
+        allowButton.visibility = if (Settings.canDrawOverlays(this)) android.view.View.GONE else android.view.View.VISIBLE
         RelayService.onStatus = { s -> runOnUiThread { show(s) } }
         show(RelayService.status)
     }
