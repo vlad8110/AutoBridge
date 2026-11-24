@@ -167,7 +167,10 @@ class BridgeService : Service() {
         endSession()
         val v = Display.config(this)
         video = v
-        decoder = VideoDecoder(v.codecW, v.codecH).also { d -> surface?.let { d.attach(it) } }
+        decoder = VideoDecoder(v.codecW, v.codecH) {
+            // Re-sending video focus makes the phone send a fresh key frame.
+            handle.takeIf { it != 0L }?.let { h -> Native.videoFocus(h, true) }
+        }.also { d -> surface?.let { d.attach(it) } }
         audio.holdFocus()
         handle = Native.start(fd, v.toArray(), Callbacks(++sessionId))
         pushSensors()
@@ -189,7 +192,7 @@ class BridgeService : Service() {
     private fun surfaceChanged() {
         val s = surface
         val d = decoder ?: return
-        if (s != null) d.attach(s) else d.release()
+        if (s != null) d.attach(s) else d.detach()
         // Asking for focus again makes the phone resend a key frame for the new decoder.
         handle.takeIf { it != 0L }?.let { Native.videoFocus(it, s != null) }
     }

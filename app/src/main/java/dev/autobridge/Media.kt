@@ -10,80 +10,168 @@ import android.media.AudioTrack
 import android.media.MediaCodec
 import android.media.MediaFormat
 import android.media.MediaRecorder
+import android.os.Handler
+import android.os.HandlerThread
 import android.util.Log
 import android.view.Surface
+import java.util.concurrent.LinkedBlockingQueue
 
-/** H.264 decoder onto the projection surface. Frames arriving with no surface are dropped. */
-class VideoDecoder(private val width: Int, private val height: Int) {
+/**
+ * H.264 decoder onto the projection surface, on its own thread so a busy screen (e.g. pulling down
+ * the shade) can't stall the connection or the audio. Frames are never dropped mid-stream: losing one
+ * corrupts every frame after it. If decoding falls far behind, it skips to the next key frame instead
+ * and asks the phone for one ([onNeedKeyFrame]).
+ */
+class VideoDecoder(private val width: Int, private val height: Int, private val onNeedKeyFrame: () -> Unit) {
+    private class Frame(val data: ByteArray, val timestampUs: Long, val config: Boolean)
+
+    private val thread = HandlerThread("ab-video").apply { start() }
+    private val handler = Handler(thread.looper)
+    // Touched only on [thread].
     private var codec: MediaCodec? = null
     private var config: ByteArray? = null  // SPS/PPS, replayed when a new surface appears
+    private val frames = ArrayDeque<Frame>()
+    private val freeInputs = ArrayDeque<Int>()
+    private var waitForKeyFrame = true
 
-    @Synchronized fun attach(surface: Surface) {
-        release()
+    fun attach(surface: Surface) = handler.post {
+        closeCodec()
         codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).apply {
+            setCallback(object : MediaCodec.Callback() {
+                override fun onInputBufferAvailable(c: MediaCodec, index: Int) { if (c === codec) { freeInputs.addLast(index); feed() } }
+                override fun onOutputBufferAvailable(c: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
+                    if (c === codec) runCatching { c.releaseOutputBuffer(index, true) }
+                }
+                override fun onError(c: MediaCodec, e: MediaCodec.CodecException) { Log.w(TAG, "decoder error", e) }
+                override fun onOutputFormatChanged(c: MediaCodec, format: MediaFormat) {}
+            }, handler)
             val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
             format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
             configure(format, surface, null, 0)
             start()
         }
-        config?.let { queue(it, 0, MediaCodec.BUFFER_FLAG_CODEC_CONFIG) }
+        waitForKeyFrame = true
+        config?.let { frames.addLast(Frame(it, 0, true)) }
     }
 
-    @Synchronized fun release() {
-        codec?.runCatching { stop(); release() }
-        codec = null
+    fun detach() = handler.post { closeCodec() }
+
+    /** Ends the decoder and its thread; the instance can't be used afterwards. */
+    fun release() = handler.post { closeCodec(); thread.quitSafely() }
+
+    /** Called on the connection thread; only hands the frame over. */
+    fun frame(data: ByteArray, timestampUs: Long) = handler.post {
+        val isConfig = isConfig(data)
+        if (isConfig) config = data
+        if (codec == null) return@post
+        val key = hasKeyFrame(data)
+        if (waitForKeyFrame) {
+            if (!isConfig && !key) return@post  // a P-frame without its reference would smear
+            if (key) waitForKeyFrame = false
+        }
+        // SPS/PPS sent together with an IDR is a normal frame with in-band config, not config-only.
+        frames.addLast(Frame(data, timestampUs, isConfig && !key))
+        if (frames.size > MAX_BACKLOG) {  // ~half a second behind: catch up at the next key frame
+            frames.clear()
+            waitForKeyFrame = true
+            onNeedKeyFrame()
+        }
+        feed()
     }
 
-    @Synchronized fun frame(data: ByteArray, timestampUs: Long) {
-        if (isConfig(data)) config = data
-        if (codec == null) return
-        queue(data, timestampUs, if (isConfig(data)) MediaCodec.BUFFER_FLAG_CODEC_CONFIG else 0)
-        drain()
-    }
-
-    private fun queue(data: ByteArray, ts: Long, flags: Int) {
+    private fun feed() {
         val c = codec ?: return
-        try {
-            val i = c.dequeueInputBuffer(20_000)
-            if (i < 0) return  // decoder busy: drop the frame rather than stall the phone
-            c.getInputBuffer(i)!!.apply { clear(); put(data) }
-            c.queueInputBuffer(i, 0, data.size, ts, flags)
-        } catch (e: IllegalStateException) {
-            Log.w(TAG, "decoder error", e)
+        while (frames.isNotEmpty() && freeInputs.isNotEmpty()) {
+            val f = frames.removeFirst()
+            val i = freeInputs.removeFirst()
+            try {
+                c.getInputBuffer(i)!!.apply { clear(); put(f.data) }
+                c.queueInputBuffer(i, 0, f.data.size, f.timestampUs, if (f.config) MediaCodec.BUFFER_FLAG_CODEC_CONFIG else 0)
+            } catch (e: IllegalStateException) {
+                Log.w(TAG, "decoder input error", e)
+                return
+            }
         }
     }
 
-    private fun drain() {
-        val c = codec ?: return
-        val info = MediaCodec.BufferInfo()
-        try {
-            while (true) {
-                val o = c.dequeueOutputBuffer(info, 0)
-                if (o >= 0) c.releaseOutputBuffer(o, true) else if (o == MediaCodec.INFO_TRY_AGAIN_LATER) break
-            }
-        } catch (_: IllegalStateException) {}
+    private fun closeCodec() {
+        codec?.runCatching { stop(); release() }
+        codec = null
+        frames.clear()
+        freeInputs.clear()
     }
 
-    /** True when the first NAL unit is an SPS (type 7), i.e. the codec config frame. */
-    private fun isConfig(d: ByteArray): Boolean {
-        val start = if (d.size > 4 && d[2].toInt() == 1) 3 else 4
-        return d.size > start && (d[start].toInt() and 0x1f) == 7
+    companion object {
+        private const val MAX_BACKLOG = 30
+
+        /** NAL unit types in an Annex-B buffer (00 00 01 / 00 00 00 01 start codes). */
+        fun nalTypes(d: ByteArray): List<Int> {
+            val types = mutableListOf<Int>()
+            var i = 0
+            while (i + 3 < d.size) {
+                if (d[i].toInt() == 0 && d[i + 1].toInt() == 0 && d[i + 2].toInt() == 1) {
+                    types += d[i + 3].toInt() and 0x1f
+                    i += 3
+                } else i++
+            }
+            return types
+        }
+
+        fun isConfig(d: ByteArray) = nalTypes(d).firstOrNull() == 7  // starts with SPS
+        fun hasKeyFrame(d: ByteArray) = 5 in nalTypes(d)            // contains an IDR slice
     }
 }
 
 /**
- * One AudioTrack per Android Auto stream. Car audio focus is taken once for the whole session and
- * held: giving it back between songs lets the car switch to its own source (e.g. Bluetooth audio),
- * which pauses the phone or silences us. AAOS mixes navigation/system sounds by their usage.
+ * One player per Android Auto stream, each with its own writer thread and ~250 ms of buffer, so a
+ * hiccup elsewhere doesn't empty the speaker buffer (the crackle). Players live for the whole session
+ * (creating/destroying them at every sound also clicked). Car audio focus is taken once per session
+ * and held: giving it back lets the car switch to its own source. AAOS mixes by usage.
  */
 class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> Unit) {
-    private class Stream(val rate: Int, val stereo: Boolean, val usage: Int)
+    private class Stream(val rate: Int, val stereo: Boolean, val usage: Int, val music: Boolean)
     private val streams = arrayOf(
-        Stream(48000, true, AudioAttributes.USAGE_MEDIA),
-        Stream(16000, false, AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE),
-        Stream(16000, false, AudioAttributes.USAGE_ASSISTANCE_SONIFICATION),
+        Stream(48000, true, AudioAttributes.USAGE_MEDIA, true),
+        Stream(16000, false, AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE, false),
+        Stream(16000, false, AudioAttributes.USAGE_ASSISTANCE_SONIFICATION, false),
     )
-    private val tracks = arrayOfNulls<AudioTrack>(3)
+
+    private class Player(s: Stream) {
+        val queue = LinkedBlockingQueue<ByteArray>()
+        private val track: AudioTrack
+        private val writer: Thread
+
+        init {
+            val mask = if (s.stereo) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
+            val quarterSecond = s.rate * (if (s.stereo) 2 else 1) * 2 / 4
+            val min = AudioTrack.getMinBufferSize(s.rate, mask, AudioFormat.ENCODING_PCM_16BIT)
+            track = AudioTrack.Builder()
+                .setAudioAttributes(AudioAttributes.Builder().setUsage(s.usage)
+                    .setContentType(if (s.music) AudioAttributes.CONTENT_TYPE_MUSIC else AudioAttributes.CONTENT_TYPE_SPEECH).build())
+                .setAudioFormat(AudioFormat.Builder().setSampleRate(s.rate).setChannelMask(mask).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
+                .setBufferSizeInBytes(maxOf(min * 2, quarterSecond)).build().apply { play() }
+            writer = Thread({
+                try {
+                    while (true) { val b = queue.take(); track.write(b, 0, b.size) }
+                } catch (_: InterruptedException) {}
+            }, "ab-audio").apply { priority = Thread.MAX_PRIORITY; start() }
+        }
+
+        fun offer(pcm: ByteArray) {
+            if (queue.size > MAX_QUEUED) queue.poll()  // over ~1 s behind: drop the oldest rather than lag
+            queue.offer(pcm)
+        }
+
+        fun close() {
+            writer.interrupt()
+            writer.join(500)
+            runCatching { track.stop(); track.release() }
+        }
+
+        companion object { const val MAX_QUEUED = 50 }
+    }
+
+    private val players = arrayOfNulls<Player>(3)
     private var focus: AudioFocusRequest? = null
 
     /** Take the car's media focus for the session. */
@@ -98,31 +186,17 @@ class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> U
             }.build().also { audio.requestAudioFocus(it) }
     }
 
-    @Synchronized fun state(stream: Int, playing: Boolean) {
-        if (playing) {
-            if (tracks[stream] != null) return
-            val s = streams[stream]
-            val attrs = AudioAttributes.Builder().setUsage(s.usage).setContentType(
-                if (stream == 0) AudioAttributes.CONTENT_TYPE_MUSIC else AudioAttributes.CONTENT_TYPE_SPEECH).build()
-            val mask = if (s.stereo) AudioFormat.CHANNEL_OUT_STEREO else AudioFormat.CHANNEL_OUT_MONO
-            val min = AudioTrack.getMinBufferSize(s.rate, mask, AudioFormat.ENCODING_PCM_16BIT)
-            tracks[stream] = AudioTrack.Builder().setAudioAttributes(attrs)
-                .setAudioFormat(AudioFormat.Builder().setSampleRate(s.rate).setChannelMask(mask).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
-                .setBufferSizeInBytes(min * 4).build().apply { play() }
-        } else {
-            tracks[stream]?.run { stop(); release() }
-            tracks[stream] = null
-        }
-    }
+    /** Start/stop from the phone. Players stay open between sounds; this just makes sure one exists. */
+    fun state(stream: Int, playing: Boolean) { if (playing) player(stream) }
 
-    fun write(stream: Int, pcm: ByteArray) {
-        if (tracks[stream] == null) state(stream, true)  // some phones send data before "start"
-        tracks[stream]?.write(pcm, 0, pcm.size)
-    }
+    /** Called on the connection thread; only queues the samples. */
+    fun write(stream: Int, pcm: ByteArray) = player(stream).offer(pcm)
 
-    /** End of session: stop everything and give focus back. */
-    fun release() {
-        (0..2).forEach { state(it, false) }
+    @Synchronized private fun player(stream: Int) = players[stream] ?: Player(streams[stream]).also { players[stream] = it }
+
+    /** End of session: close the players and give focus back. */
+    @Synchronized fun release() {
+        players.forEachIndexed { i, p -> p?.close(); players[i] = null }
         focus?.let { audio.abandonAudioFocusRequest(it) }
         focus = null
     }
