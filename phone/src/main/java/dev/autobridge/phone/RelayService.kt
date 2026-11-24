@@ -47,8 +47,9 @@ class RelayService : Service() {
             .setContentTitle("AutoBridge relay is ready").build()
         if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         else startForeground(1, n)
-        listen("Android Auto", InetSocketAddress(InetAddress.getLoopbackAddress(), AA_PORT)) { offer(aa = it) }
-        listen("car", InetSocketAddress(CAR_PORT)) { offer(car = it); if (waitingCar != null) startAndroidAuto() }
+        // Must be IPv4 127.0.0.1: the address the car hands Android Auto. getLoopbackAddress() is ::1 on Android.
+        listen("Android Auto", InetSocketAddress(InetAddress.getByName("127.0.0.1"), AA_PORT)) { offer(aa = it) }
+        listen("car", InetSocketAddress(CAR_PORT)) { offer(car = it) }
         say("Ready. Waiting for the car.")
     }
 
@@ -75,30 +76,6 @@ class RelayService : Service() {
                 if (running) { say("Relay error ($who): ${e.message}"); Thread.sleep(2000) }
             }
         }
-    }
-
-    /**
-     * Joining the car's Wi-Fi only gets Android Auto to "select Android Auto on your vehicle screen";
-     * it starts the session once its wireless start screen is opened with our address. Opening an
-     * activity from the background needs the "Appear on top" permission (MainActivity asks for it).
-     */
-    private fun startAndroidAuto() {
-        say("Starting Android Auto")
-        val aa = "com.google.android.projection.gearhead"
-        val version = runCatching { packageManager.getPackageInfo(aa, 0).versionName }.getOrNull()
-        say("Android Auto version: ${version ?: "not found"}")
-        runCatching {
-            sendBroadcast(Intent("com.google.android.apps.auto.wireless.setup.receiver.wirelessstartup.START")
-                .setClassName(aa, "com.google.android.apps.auto.wireless.setup.receiver.WirelessStartupReceiver")
-                .putExtra("ip_address", "127.0.0.1").putExtra("projection_port", AA_PORT)
-                .addFlags(Intent.FLAG_RECEIVER_FOREGROUND))
-        }
-        runCatching {
-            startActivity(Intent().setClassName(aa, "com.google.android.apps.auto.wireless.setup.service.impl.WirelessStartupActivity")
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                .putExtra("PARAM_HOST_ADDRESS", "127.0.0.1").putExtra("PARAM_SERVICE_PORT", AA_PORT)
-                .putExtra("ip_address", "127.0.0.1").putExtra("projection_port", AA_PORT))
-        }.onFailure { say("Couldn't open Android Auto: ${it.message}") }
     }
 
     /** Holds whichever side arrives first; a newer socket replaces an older waiting one. */
