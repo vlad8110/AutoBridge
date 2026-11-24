@@ -2,27 +2,64 @@ package dev.autobridge.phone
 
 import android.Manifest
 import android.app.Activity
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.pm.PackageManager
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
+import android.widget.Button
+import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 
-/** Just starts the relay and shows what it's doing. */
+/**
+ * Starts the relay, shows what it's doing, and shows the Wi-Fi the phone is on, so a new truck's
+ * hotspot details (name, BSSID, channel) can be copied into AutoBridge on that truck.
+ */
 class MainActivity : Activity() {
-    private lateinit var text: TextView
+    private lateinit var wifiText: TextView
+    private lateinit var statusText: TextView
+    private var details: WifiDetails? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        text = TextView(this).apply { textSize = 18f; gravity = Gravity.CENTER; setPadding(48, 48, 48, 48) }
-        setContentView(text)
-        if (Build.VERSION.SDK_INT >= 33) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
+        fun label(size: Float) = TextView(this).apply { textSize = size; gravity = Gravity.CENTER; setPadding(0, 24, 0, 24) }
+        wifiText = label(18f)
+        statusText = label(15f)
+        val refresh = Button(this).apply { text = "Refresh Wi-Fi details"; setOnClickListener { showWifi() } }
+        val copy = Button(this).apply { text = "Copy Wi-Fi details"; setOnClickListener { copyWifi() } }
+        setContentView(ScrollView(this).apply {
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER_HORIZONTAL
+                setPadding(48, 48, 48, 48)
+                addView(label(22f).apply { text = "Car Wi-Fi (for AutoBridge on the truck)" })
+                addView(wifiText)
+                addView(refresh)
+                addView(copy)
+                addView(label(22f).apply { text = "Relay" })
+                addView(statusText)
+                addView(label(14f).apply { text = "Leave this installed; it starts by itself when the phone boots." })
+            })
+        })
+        val wanted = buildList {
+            add(Manifest.permission.ACCESS_FINE_LOCATION)  // Android only reveals SSID/BSSID with it
+            if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
+        }.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+        if (wanted.isNotEmpty()) requestPermissions(wanted.toTypedArray(), 1)
         RelayService.start(this)
     }
 
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) = showWifi()
+
     override fun onResume() {
         super.onResume()
-        RelayService.onStatus = { s -> runOnUiThread { show(s) } }
-        show(RelayService.status)
+        RelayService.onStatus = { s -> runOnUiThread { statusText.text = s } }
+        statusText.text = RelayService.status
+        showWifi()
     }
 
     override fun onPause() {
@@ -30,7 +67,26 @@ class MainActivity : Activity() {
         super.onPause()
     }
 
-    private fun show(s: String) {
-        text.text = "AutoBridge Phone\n\n$s\n\nLeave this installed; it starts by itself when the phone boots."
+    private fun showWifi() {
+        details = null
+        wifiText.text = when {
+            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ->
+                "Allow Location for AutoBridge Phone to see the Wi-Fi name and BSSID."
+            else -> {
+                val d = WifiDetails.current(getSystemService(WifiManager::class.java))
+                when {
+                    d == null -> "Not on Wi-Fi. Connect the phone to the truck's hotspot, then tap Refresh."
+                    d.bssid.isEmpty() || d.bssid == "02:00:00:00:00:00" || d.ssid == "<unknown ssid>" ->
+                        "Turn on Location (Settings > Location) so Android shows the Wi-Fi details."
+                    else -> { details = d; d.asText() + "\n\nPassword: the one you set for the hotspot" }
+                }
+            }
+        }
+    }
+
+    private fun copyWifi() {
+        val d = details ?: return Toast.makeText(this, "No Wi-Fi details to copy yet", Toast.LENGTH_SHORT).show()
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText("Car Wi-Fi", d.asText()))
+        Toast.makeText(this, "Copied", Toast.LENGTH_SHORT).show()
     }
 }

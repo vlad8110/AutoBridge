@@ -56,7 +56,8 @@ AB_KEYSTORE=/path/upload.jks AB_KEYSTORE_PASSWORD=... \
 
 ## Set up in the car
 
-1. Turn on the car's Wi-Fi hotspot and note its name, password and BSSID (the access point's MAC address).
+1. Turn on the car's Wi-Fi hotspot and connect the phone to it. AutoBridge Phone shows the hotspot's name,
+   BSSID and channel (with a Copy button); you only need to know the password yourself.
 2. Open AutoBridge, allow Nearby devices and Microphone, tap **Wi-Fi settings** and enter those three values.
 3. Install AutoBridge Phone on the phone and open it once (it then starts by itself after reboots).
 4. Pair your phone with the car over Bluetooth (once). In the car's Bluetooth settings for the phone, keep
