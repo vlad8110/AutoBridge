@@ -51,6 +51,8 @@ class BridgeService : Service() {
         /** Name of the phone that last connected over Bluetooth (settings page). */
         @Volatile var phoneName: String? = null
         const val EXTRA_BOOT = "boot"
+        /** Phone silent this long = gone. Its pings normally come every second or so (logged at session start). */
+        const val PING_SILENCE_MS = 12_000L
         var onStatus: ((String) -> Unit)? = null
         var onVideoActive: ((Boolean) -> Unit)? = null
         /** Projection surface from MainActivity; may exist before or after the service starts. */
@@ -81,6 +83,11 @@ class BridgeService : Service() {
     // Closed in onDestroy so threads blocked on them end: a stopped copy left listening took the phone's next connection.
     @Volatile private var btServer: java.io.Closeable? = null
     @Volatile private var logLine: Socket? = null
+    @Volatile private var btLink: java.io.Closeable? = null
+    /** Sends the phone a new "join the hotspot" request over the open Bluetooth link (null: no link). */
+    @Volatile private var invite: (() -> Unit)? = null
+    @Volatile private var busyAt = 0L
+    @Volatile private var invitedAt = 0L
     private val searching = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun onBind(intent: Intent?) = null
@@ -96,6 +103,7 @@ class BridgeService : Service() {
         thread(name = "ab-bluetooth") { bluetoothLoop() }
         thread(name = "ab-logline", isDaemon = true) { logRequestLoop() }
         thread(name = "ab-setup", isDaemon = true) { setupLoop() }
+        thread(name = "ab-reinvite", isDaemon = true) { reinviteLoop() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -142,6 +150,8 @@ class BridgeService : Service() {
         running = false
         runCatching { btServer?.close() }
         runCatching { logLine?.close() }
+        runCatching { btLink?.close() }
+        main.removeCallbacks(watchdog)
         endSession()
         car?.disconnect()
         instance = null
@@ -169,14 +179,20 @@ class BridgeService : Service() {
                     if (!running) { socket.close(); return }
                     thread(name = "ab-handshake") {
                         socket.use {
+                            btLink = it
                             val wifi = prefs.wifi() ?: return@thread say("Set the Wi-Fi details in AutoBridge settings")
                             val ip = carIp() ?: return@thread say("Car Wi-Fi hotspot is off (no address found)")
                             phoneName = it.remoteDevice.name
                             say("Phone ${it.remoteDevice.name ?: "?"} connected over Bluetooth")
                             try {
                                 Wireless.handshake(it.inputStream, it.outputStream, "127.0.0.1", wifi, Wireless.PHONE_AA_PORT,
-                                    onPhoneOnWifi = { thread(name = "ab-find") { connectToPhone(ip) } }, log = ::say)
-                            } catch (_: IOException) { /* phone closed RFCOMM, normal after Wi-Fi joins */ }
+                                    onPhoneOnWifi = { thread(name = "ab-find") { connectToPhone(ip) } }, log = ::say,
+                                    onLink = { send -> busyAt = System.currentTimeMillis(); invite = send })
+                            } catch (_: IOException) {
+                                Log.i(TAG, "Bluetooth link to the phone closed")
+                            } finally {
+                                if (btLink === it) { btLink = null; invite = null }
+                            }
                         }
                     }
                 }
@@ -271,6 +287,36 @@ class BridgeService : Service() {
 
     // ---- session ----
 
+    /**
+     * After a Wi-Fi drop the phone doesn't come back by itself; a car asks it again over the still-open
+     * Bluetooth link. Every 10 s without a session (and not mid-connection), send that request.
+     */
+    private fun reinviteLoop() {
+        while (running) {
+            Thread.sleep(2000)
+            val send = invite ?: continue
+            val now = System.currentTimeMillis()
+            if (handle != 0L || searching.get()) { busyAt = now; continue }
+            if (now - busyAt < 5000 || now - invitedAt < 10_000) continue
+            invitedAt = now
+            say("No Android Auto: asking the phone to rejoin the hotspot")
+            runCatching { send() }.onFailure { Log.i(TAG, "invite failed: $it") }
+        }
+    }
+
+    /** The phone pings all the time; silence means it's gone (Wi-Fi dropped) even if no error arrives. */
+    private val watchdog = object : Runnable {
+        override fun run() {
+            val h = handle.takeIf { it != 0L } ?: return
+            if (Native.sincePingMs(h) > PING_SILENCE_MS) {
+                endSession()
+                say("Disconnected: the phone stopped answering (Wi-Fi lost?)")
+                return
+            }
+            main.postDelayed(this, 2000)
+        }
+    }
+
     private fun startSession(fd: Int) {
         if (!running) { ParcelFileDescriptor.adoptFd(fd).close(); return }  // this copy was stopped meanwhile
         endSession()
@@ -284,6 +330,7 @@ class BridgeService : Service() {
         audio.holdFocus()
         NowPlaying.connected(this)
         handle = Native.start(fd, plan.toArray(), truck.toArray(), gpsAllowed(), Callbacks(++sessionId, plan))
+        main.removeCallbacks(watchdog); main.postDelayed(watchdog, 2000)
         Log.i(TAG, "video offered: ${if (plan.hevc) "H.265" else "H.264"} " + plan.configs.joinToString { "${it.codecW}x${it.codecH}" })
         pushSensors()
         say("Android Auto connected")
@@ -295,6 +342,7 @@ class BridgeService : Service() {
 
     private fun endSession() {
         mic.open(false)  // joins the mic thread, so it can't write into a freed session
+        main.removeCallbacks(watchdog)
         val h = handle
         handle = 0
         if (h != 0L) Native.stop(h)

@@ -27,6 +27,8 @@ object Native {
     /** fix = [lat e7, lon e7, accuracy e3 m (-1 unknown), altitude e2 m (Int.MIN_VALUE unknown), speed e3 m/s (-1), bearing e6 deg (-1)] */
     external fun location(handle: Long, fix: IntArray)
     external fun stop(handle: Long)
+    /** ms since the phone's last ping, or -1 before its first one. */
+    external fun sincePingMs(handle: Long): Long
     external fun touch(handle: Long, action: Int, actionIndex: Int, ids: IntArray, xs: IntArray, ys: IntArray)
     external fun mic(handle: Long, pcm: ByteArray, length: Int)
     external fun sensors(handle: Long, moving: Boolean, night: Boolean, truck: IntArray)

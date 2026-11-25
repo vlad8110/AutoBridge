@@ -39,6 +39,20 @@ class WirelessTest {
         assertArrayEquals(Wireless.infoResponse(wifi), frames[2].second)
     }
 
+    @Test fun inviteResendsTheStartRequestOnTheSameLink() {
+        val wifi = Wireless.Wifi("MyTruck", "secret", "02:1A:2B:3C:4D:5E")
+        val car = ByteArrayOutputStream()
+        var invite: (() -> Unit)? = null
+        try {
+            Wireless.handshake(ByteArrayInputStream(ByteArray(0)), car, "10.0.0.1", wifi, onLink = { invite = it }) {}
+        } catch (_: EOFException) { /* phone stream ended */ }
+        car.reset()
+        invite!!()  // e.g. 10 s after the phone's Wi-Fi dropped
+        val out = car.toByteArray()
+        assertEquals(Wireless.START_REQUEST, out[3].toInt())
+        assertArrayEquals(Wireless.startRequest("10.0.0.1", wifi), out.copyOfRange(4, out.size))
+    }
+
     @Test fun versionRequestCarriesEndpointInField6() {
         val endpoint = byteArrayOf(0x0a, 8) + "10.0.0.1".toByteArray() + byteArrayOf(0x10, 0xa8.toByte(), 0x29)
         val expected = byteArrayOf(0x08, 4, 0x10, 1, 0x32, endpoint.size.toByte()) + endpoint

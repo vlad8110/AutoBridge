@@ -68,9 +68,13 @@ object Wireless {
      */
     fun handshake(
         input: InputStream, output: OutputStream, ip: String, wifi: Wifi, port: Int = PORT,
-        onPhoneOnWifi: () -> Unit = {}, log: (String) -> Unit,
+        onPhoneOnWifi: () -> Unit = {}, onLink: (invite: () -> Unit) -> Unit = {},
+        log: (String) -> Unit,
     ) {
         val src = DataInputStream(input)
+        // Asks the phone to (re)join the hotspot and start Android Auto, as a car does after a Wi-Fi drop.
+        val invite = { send(output, START_REQUEST, startRequest(ip, wifi, port)) }
+        onLink(invite)
         send(output, VERSION_REQUEST, versionRequest(ip, port))
         log("Sent version and car address $ip:$port")
         while (true) {
@@ -80,7 +84,7 @@ object Wireless {
             when (id) {
                 VERSION_RESPONSE -> {
                     log("Phone version reply (${payload.size} bytes)")
-                    send(output, START_REQUEST, startRequest(ip, wifi, port))
+                    invite()
                 }
                 INFO_REQUEST -> {
                     send(output, INFO_RESPONSE, infoResponse(wifi))
@@ -113,7 +117,7 @@ object Wireless {
         .string(1, wifi.ssid).string(2, wifi.password).string(3, wifi.bssid.lowercase())
         .varint(4, WPA2_PERSONAL.toLong()).varint(5, AP_STATIC.toLong()).bytes()
 
-    fun send(out: OutputStream, id: Int, payload: ByteArray) {
+    fun send(out: OutputStream, id: Int, payload: ByteArray) = synchronized(out) {  // invites come from another thread
         val frame = byteArrayOf((payload.size shr 8).toByte(), payload.size.toByte(), (id shr 8).toByte(), id.toByte()) + payload
         out.write(frame)
         out.flush()

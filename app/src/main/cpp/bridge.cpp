@@ -63,6 +63,10 @@ struct Config {
     const Tier &main() const { return tiers.front(); }  // all tiers share one shape; touch uses this one
 };
 
+static int64_t nowMs() {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
+
 class Session;
 
 // Calls into the Kotlin listener from the io thread (attached once in Session::run).
@@ -167,6 +171,8 @@ public:
     Config cfg;
     Listener listener;
     std::atomic<bool> ended{false};
+    int pingsLogged = 0;
+    std::atomic<int64_t> lastPingMs{0};  // phone's last ping; 0 = none yet (Kotlin watches for it stopping)
     std::thread thread;
     std::vector<std::shared_ptr<void>> keep;  // handlers, kept alive for the session
     std::function<void()> starter;
@@ -628,6 +634,9 @@ struct Control : Base, aasdk::channel::control::IControlServiceChannelEventHandl
         ch->receive(shared_from_this());
     }
     void onPingRequest(const ctl::PingRequest &r) override {
+        int64_t now = nowMs(), last = s.lastPingMs.exchange(now);
+        if (last == 0) LOG("first ping from the phone");
+        else if (s.pingsLogged < 3) { s.pingsLogged++; LOG("phone ping after %lld ms", (long long) (now - last)); }
         ctl::PingResponse resp;
         resp.set_timestamp(r.timestamp());
         ch->sendPingResponse(resp, promise());
@@ -822,6 +831,11 @@ JNIEXPORT void JNICALL Java_dev_autobridge_Native_key(JNIEnv *, jobject, jlong h
         key->set_metastate(0);
     }
     s->strand.dispatch([s, report] { if (s->inputReady) s->inputChannel->sendInputReport(report, ::promise(*s, "key")); });
+}
+
+JNIEXPORT jlong JNICALL Java_dev_autobridge_Native_sincePingMs(JNIEnv *, jobject, jlong h) {
+    int64_t last = ((Session *) h)->lastPingMs.load();
+    return last == 0 ? -1 : nowMs() - last;
 }
 
 JNIEXPORT void JNICALL Java_dev_autobridge_Native_videoFocus(JNIEnv *, jobject, jlong h, jboolean projected) {
