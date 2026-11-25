@@ -45,7 +45,9 @@ class BridgeService : Service() {
         @Volatile var status = "Starting…"
         /** The truck bar's text (null: the truck shares nothing); also delivered to [onTruck]. */
         @Volatile var truckText: String? = null
-        var onTruck: ((String?) -> Unit)? = null
+        var onTruck: ((Truck) -> Unit)? = null
+        /** Latest truck values, for the bar under Android Auto. */
+        @Volatile var latestTruck = Truck()
         const val EXTRA_BOOT = "boot"
         var onStatus: ((String) -> Unit)? = null
         var onVideoActive: ((Boolean) -> Unit)? = null
@@ -425,20 +427,41 @@ class BridgeService : Service() {
                     VehiclePropertyIds.EV_BATTERY_LEVEL -> truck.copy(batteryWh = x as? Float)
                     VehiclePropertyIds.INFO_EV_BATTERY_CAPACITY -> truck.copy(capacityWh = x as? Float)
                     VehiclePropertyIds.RANGE_REMAINING -> truck.copy(rangeM = x as? Float)
+                    VehiclePropertyIds.EV_BATTERY_INSTANTANEOUS_CHARGE_RATE -> truck.copy(rateMw = x as? Float)
+                    VehiclePropertyIds.EV_CHARGE_STATE -> truck.copy(chargeState = x as? Int)
+                    VehiclePropertyIds.EV_CHARGE_TIME_REMAINING -> truck.copy(chargeSec = x as? Int)
+                    VehiclePropertyIds.EV_CHARGE_PERCENT_LIMIT -> truck.copy(chargeLimit = x as? Float)
+                    VehiclePropertyIds.EV_CHARGE_CURRENT_DRAW_LIMIT -> truck.copy(currentA = x as? Float)
+                    VehiclePropertyIds.EV_CHARGE_PORT_OPEN -> truck.copy(portOpen = x as? Boolean)
+                    VehiclePropertyIds.EV_CHARGE_PORT_CONNECTED -> truck.copy(portConnected = x as? Boolean)
+                    VehiclePropertyIds.EV_REGENERATIVE_BRAKING_STATE -> truck.copy(regen = x as? Int)
+                    VehiclePropertyIds.ENV_OUTSIDE_TEMPERATURE -> truck.copy(outsideC = x as? Float)
                     else -> truck
                 }
-                pushSensors()
-                val line = truck.line(miles = java.util.Locale.getDefault().country in setOf("US", "GB"))
-                if (line != truckText) { truckText = line; main.post { onTruck?.invoke(line) } }
+                if (v.propertyId in AA_PROPS) pushSensors()
+                truckText = truck.line(miles = truck.miles ?: (java.util.Locale.getDefault().country in setOf("US", "GB")))
+                latestTruck = truck
+                val t = truck
+                main.post { onTruck?.invoke(t) }
             }
             override fun onErrorEvent(propertyId: Int, zone: Int) {}
         }
-        for (id in listOf(VehiclePropertyIds.PERF_VEHICLE_SPEED, VehiclePropertyIds.GEAR_SELECTION, VehiclePropertyIds.PARKING_BRAKE_ON,
-            VehiclePropertyIds.EV_BATTERY_LEVEL, VehiclePropertyIds.INFO_EV_BATTERY_CAPACITY, VehiclePropertyIds.RANGE_REMAINING)) {
-            val rate = if (id == VehiclePropertyIds.PERF_VEHICLE_SPEED) 1f else CarPropertyManager.SENSOR_RATE_ONCHANGE
+        // The truck's own units (miles, °F); read once, they only change in the truck's settings.
+        runCatching { truck = truck.copy(miles = props.getProperty<Int>(VehiclePropertyIds.DISTANCE_DISPLAY_UNITS, 0).value == 0x24) }
+        runCatching { truck = truck.copy(fahrenheit = props.getProperty<Int>(VehiclePropertyIds.HVAC_TEMPERATURE_DISPLAY_UNITS, 0).value == 0x31) }
+        for (id in AA_PROPS + listOf(VehiclePropertyIds.EV_BATTERY_INSTANTANEOUS_CHARGE_RATE, VehiclePropertyIds.EV_CHARGE_STATE,
+            VehiclePropertyIds.EV_CHARGE_TIME_REMAINING, VehiclePropertyIds.EV_CHARGE_PERCENT_LIMIT, VehiclePropertyIds.EV_CHARGE_CURRENT_DRAW_LIMIT,
+            VehiclePropertyIds.EV_CHARGE_PORT_OPEN, VehiclePropertyIds.EV_CHARGE_PORT_CONNECTED, VehiclePropertyIds.EV_REGENERATIVE_BRAKING_STATE,
+            VehiclePropertyIds.ENV_OUTSIDE_TEMPERATURE)) {
+            val rate = if (id == VehiclePropertyIds.PERF_VEHICLE_SPEED || id == VehiclePropertyIds.EV_BATTERY_INSTANTANEOUS_CHARGE_RATE) 1f
+                       else CarPropertyManager.SENSOR_RATE_ONCHANGE
             runCatching { props.registerCallback(callback, id, rate) }.onFailure { Log.w(TAG, "truck won't share property $id: $it") }
         }
     }
+
+    /** What Android Auto is told about (Native.sensors); the rest only feeds the bar. */
+    private val AA_PROPS = listOf(VehiclePropertyIds.PERF_VEHICLE_SPEED, VehiclePropertyIds.GEAR_SELECTION, VehiclePropertyIds.PARKING_BRAKE_ON,
+        VehiclePropertyIds.EV_BATTERY_LEVEL, VehiclePropertyIds.INFO_EV_BATTERY_CAPACITY, VehiclePropertyIds.RANGE_REMAINING)
 
     private fun pushSensors() {
         val night = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES

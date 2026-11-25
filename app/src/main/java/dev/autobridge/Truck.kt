@@ -10,7 +10,22 @@ data class Truck(
     val batteryWh: Float? = null,
     val capacityWh: Float? = null,
     val rangeM: Float? = null,
+    // For the bar under Android Auto (TruckBar). Charging power is in mW, negative while charging.
+    val rateMw: Float? = null,
+    val chargeState: Int? = null,        // 1 charging, 2 full, 3 not charging
+    val chargeSec: Int? = null,
+    val chargeLimit: Float? = null,      // %
+    val currentA: Float? = null,
+    val portOpen: Boolean? = null,
+    val portConnected: Boolean? = null,
+    val regen: Int? = null,              // 1 off, 2 partial, 3 full (one-pedal)
+    val outsideC: Float? = null,
+    val miles: Boolean? = null,          // the truck's own display units
+    val fahrenheit: Boolean? = null,
 ) {
+    /** Charging when the truck says so, or when plugged in with power flowing into the battery. */
+    val charging get() = chargeState == 1 || (portConnected == true && (rateMw ?: 0f) < 0f)
+
     val batteryPercent: Int?
         get() = if (batteryWh != null && capacityWh != null && capacityWh > 0) (batteryWh / capacityWh * 100).roundToInt().coerceIn(0, 100) else null
 

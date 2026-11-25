@@ -29,7 +29,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var surface: SurfaceView
     private lateinit var panel: LinearLayout
     private lateinit var status: TextView
-    private lateinit var truckBar: TextView
+    private lateinit var truckBar: TruckBar
     private var statusText = ""
     private var cursorOn = true
     private val blink = object : Runnable {
@@ -50,16 +50,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             text = "Send logs to phone"; textSize = 18f; typeface = Typeface.MONOSPACE
             setOnClickListener { BridgeService.instance?.sendLogs("button") ?: show("AutoBridge isn't running yet") }
         }
-        // The truck's battery, range, gear and brake, big enough to read at a glance.
-        // Frosted-glass card under the buttons, in the truck's clean sans-serif style.
-        truckBar = TextView(this).apply {
-            textSize = 30f; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL); setTextColor(0xFFF2F4F8.toInt())
-            letterSpacing = 0.03f; gravity = Gravity.CENTER_VERTICAL; setPadding(40, 22, 40, 22); visibility = View.GONE
-            background = android.graphics.drawable.GradientDrawable(
-                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(0x33FFFFFF, 0x14FFFFFF),  // light at the top, like glass catching light
-            ).apply { cornerRadius = 28f; setStroke(2, 0x40FFFFFF) }
-        }
+        // The truck's data in a smoky-glass strip under Android Auto (always shown).
+        truckBar = TruckBar(this)
         panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Console.BACKGROUND)
@@ -74,7 +66,6 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     })
                 }
             }, LinearLayout.LayoutParams(-2, -2))
-            addView(truckBar, LinearLayout.LayoutParams(-2, -2).apply { topMargin = 24 })
         }
         root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -85,7 +76,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 fitSurface()
             }
         }
-        setContentView(root)
+        // Android Auto gets the area above the bar; it re-measures from root's size at the next connection.
+        setContentView(LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.BLACK)
+            addView(root, LinearLayout.LayoutParams(-1, 0, 1f))
+            addView(truckBar)
+        })
         root.setOnTouchListener(::onTouch)
         askPermissionsThenStart()
     }
@@ -93,8 +90,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     override fun onResume() {
         super.onResume()
         BridgeService.onStatus = { show(it) }
-        BridgeService.onTruck = ::showTruck
-        showTruck(BridgeService.truckText)
+        BridgeService.onTruck = { truckBar.show(it) }
+        truckBar.show(BridgeService.latestTruck)
         BridgeService.instance?.fullForeground()
         ClusterNav.resumed(this)
         BridgeService.onVideoActive = { active -> panel.visibility = if (active) View.GONE else View.VISIBLE; fitSurface() }
@@ -111,11 +108,6 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         ClusterNav.paused(this)
         BridgeService.onVideoActive = null
         super.onPause()
-    }
-
-    private fun showTruck(text: String?) {
-        truckBar.text = text
-        truckBar.visibility = if (text == null) View.GONE else View.VISIBLE
     }
 
     // ---- video surface ----
