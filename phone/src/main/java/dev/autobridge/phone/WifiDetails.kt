@@ -25,6 +25,22 @@ data class WifiDetails(val ssid: String, val bssid: String, val frequencyMhz: In
         fun setPassword(context: android.content.Context, ssid: String, password: String) =
             context.getSharedPreferences("hotspots", android.content.Context.MODE_PRIVATE).edit().putString(ssid, password).apply()
 
+        /**
+         * What to tell a truck that asks for its hotspot details, and a line for this app's status.
+         * Problems go to the truck as "AUTOBRIDGE-WIFI-ERROR\n<what to do>" so its screen says what to fix.
+         */
+        fun setupReply(located: Boolean, d: WifiDetails?, password: String?): Pair<String, String> {
+            val problem = when {
+                !located -> "allow Location for AutoBridge Phone, so it can read the hotspot name"
+                d == null -> "the phone isn't on Wi-Fi"
+                d.ssid == "<unknown ssid>" || d.bssid.isEmpty() || d.bssid == "02:00:00:00:00:00" -> "turn on Location on the phone, so it can read the hotspot name"
+                password == null -> "tap Password in AutoBridge Phone and type the ${d.ssid} password"
+                else -> null
+            }
+            return if (problem != null) "AUTOBRIDGE-WIFI-ERROR\n${problem.replaceFirstChar { it.uppercase() }}\n" to "The truck asked for its Wi-Fi details: $problem"
+            else d!!.setupMessage(password!!) to "Sent ${d.ssid} details to the truck"
+        }
+
         fun channelOf(mhz: Int): Int = when {
             mhz == 2484 -> 14
             mhz in 2412..2472 -> (mhz - 2407) / 5

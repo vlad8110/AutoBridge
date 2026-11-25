@@ -229,6 +229,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 if (!Regex("([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}").matches(mac)) {
                     show("BSSID must look like 02:1a:2b:3c:4d:5e"); return@setPositiveButton
                 }
+                if (ssid.text.isBlank()) { show("Enter the hotspot name"); return@setPositiveButton }
+                if (pass.text.length !in 8..63) { show("A hotspot password is 8 to 63 characters"); return@setPositiveButton }
                 s.ssid = ssid.text.toString(); s.password = pass.text.toString(); s.bssid = mac
                 show("Saved. Waiting for phone…")
             }

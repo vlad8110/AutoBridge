@@ -113,11 +113,11 @@ class RelayService : Service() {
 
     /** A truck without Wi-Fi details asks for the hotspot we're on; only answered once its password is saved here. */
     private fun sendSetup(s: Socket) = s.use {
+        val located = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
         val d = runCatching { WifiDetails.current(getSystemService(android.net.wifi.WifiManager::class.java)) }.getOrNull()
-        val pw = d?.let { WifiDetails.password(this, it.ssid) }
-        if (d == null || pw == null) return@use say("A new truck asked for its Wi-Fi details; set the hotspot password in this app")
-        runCatching { it.getOutputStream().write(d.setupMessage(pw).toByteArray()) }
-        say("Sent ${d.ssid} details to the truck")
+        val (message, note) = WifiDetails.setupReply(located, d, d?.let { WifiDetails.password(this, it.ssid) })
+        runCatching { it.getOutputStream().write(message.toByteArray()) }  // the truck shows the error line to the owner
+        say(note)
     }
 
     private fun saveLog(s: Socket) = s.use {

@@ -83,7 +83,11 @@ class SettingsPanel(
                     LinearLayout.LayoutParams(0, px(200), 1f).apply { marginStart = px(22) })
             })
             header("TRUCK HOTSPOT")
-            addView(row(hotspot, hotspotDetail, button("EDIT") { editWifi() }, button("FORGET") { s.forget(); refresh(); toast("Hotspot details forgotten") }))
+            addView(row(hotspot, hotspotDetail, button("TEST") {
+                val service = BridgeService.instance ?: return@button toast("AutoBridge isn't running")
+                toast("Checking the hotspot details with your phone…")
+                service.testWifi { toast(it); refresh() }
+            }, button("EDIT") { editWifi() }, button("FORGET") { s.forget(); refresh(); toast("Hotspot details forgotten") }))
             header("PHONE")
             addView(LinearLayout(context).apply {
                 addView(row(text(40f).apply { text = "Voice button" }, voiceDetail, button("CHANGE") {

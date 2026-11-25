@@ -177,18 +177,24 @@ class BridgeService : Service() {
                     btServer = server
                     if (!running) return  // stopped while we were opening it
                     if (btDownSince != 0L) { Log.i(TAG, "Bluetooth back after ${(System.currentTimeMillis() - btDownSince) / 1000} s"); btDownSince = 0L }
-                    say("Waiting for phone over Bluetooth…")
+                    say("Waiting for phone over Bluetooth… (phone: Bluetooth on and connected to the truck, Wireless Android Auto on)")
                     val socket = server.accept()
                     if (!running) { socket.close(); return }
                     thread(name = "ab-handshake") {
                         socket.use {
                             btLink = it
-                            val wifi = prefs.wifi() ?: return@thread say("Set the Wi-Fi details in AutoBridge settings")
+                            // A new truck may get its details from the phone app a few seconds after the phone's
+                            // Bluetooth arrives; wait for them rather than hang up, since the phone won't retry soon.
+                            var wifi = prefs.wifi()
+                            if (wifi == null) say("Phone connected over Bluetooth; waiting for the hotspot details from AutoBridge Phone…")
+                            for (i in 1..30) { if (wifi != null) break; Thread.sleep(2000); wifi = prefs.wifi() }
+                            if (wifi == null) return@thread say("No hotspot details yet: open AutoBridge Phone on the truck's hotspot and set the password, or tap EDIT in settings")
                             val ip = carIp() ?: return@thread say("Car Wi-Fi hotspot is off (no address found)")
                             phoneName = it.remoteDevice.name
                             say("Phone ${it.remoteDevice.name ?: "?"} connected over Bluetooth")
                             try {
-                                Wireless.handshake(it.inputStream, it.outputStream, "127.0.0.1", wifi, Wireless.PHONE_AA_PORT,
+                                val first = wifi
+                                Wireless.handshake(it.inputStream, it.outputStream, "127.0.0.1", { prefs.wifi() ?: first }, Wireless.PHONE_AA_PORT,
                                     onPhoneOnWifi = { thread(name = "ab-find") { connectToPhone(ip) } }, log = ::say,
                                     onLink = { send -> busyAt = System.currentTimeMillis(); invite = send })
                             } catch (_: IOException) {
@@ -230,30 +236,46 @@ class BridgeService : Service() {
     }
 
     /**
-     * No Wi-Fi details yet (a new truck): ask the AutoBridge Phone app on the hotspot for them.
-     * Typing them in Wi-Fi settings still works, and once saved this stops asking.
+     * New truck: asks the AutoBridge Phone app on the hotspot for the Wi-Fi details until it has them.
+     * After that, checks them once against each phone it finds, so a typo or a changed hotspot fixes itself.
      */
     private fun setupLoop() {
-        val pool = java.util.concurrent.Executors.newFixedThreadPool(64)
+        var checkedIp: String? = null
         while (running) {
-            val s = Settings(this)
-            val ip = carIp()
-            if (s.wifi() == null && ip != null) {
-                runCatching {
-                    sweep(pool, ip, Wireless.PHONE_SETUP_PORT)?.use { socket ->
-                        socket.soTimeout = 5000
-                        val w = Wireless.parseSetup(socket.getInputStream().readBytes().decodeToString())
-                        if (w == null) say("The phone app sent no usable Wi-Fi details (set the hotspot password in the phone app)")
-                        else if (s.wifi() == null) {
-                            s.ssid = w.ssid; s.password = w.password; s.bssid = w.bssid
-                            say("Got the hotspot details from your phone: ${w.ssid}")
-                        }
-                    }
-                }
+            val ip = phoneIp
+            if (Settings(this).wifi() == null || (ip != null && ip != checkedIp)) {
+                val quiet = Settings(this).wifi() == null  // a new truck asks every 10 s; only speak when the phone answers
+                runCatching { checkWifi(quiet) }.onSuccess { if (it && ip != null) checkedIp = ip }
             }
             Thread.sleep(10_000)
         }
-        pool.shutdownNow()
+    }
+
+    /** Settings' TEST button: compares the saved hotspot details with the phone's and fixes them. */
+    fun testWifi(report: (String) -> Unit) = thread(name = "ab-wifitest") {
+        val line = runCatching { checkWifi(quiet = false); lastCheck }.getOrElse { "Wi-Fi check failed: ${it.message}".also(::say) }
+        main.post { report(line ?: "Wi-Fi check: no answer") }
+    }
+
+    /** True if the phone app answered. [quiet]: say nothing when it isn't found. */
+    private var lastCheck: String? = null
+
+    @Synchronized private fun checkWifi(quiet: Boolean): Boolean {
+        val car = carIp() ?: return false.also { if (!quiet) { lastCheck = "Wi-Fi check: the truck's hotspot is off"; say(lastCheck!!) } }
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(64)
+        val reply = try {
+            val known = phoneIp?.let { ip -> Socket().let { so ->
+                try { so.bind(InetSocketAddress(car, 0)); so.connect(InetSocketAddress(ip, Wireless.PHONE_SETUP_PORT), 700); so }
+                catch (_: IOException) { so.close(); null } } }
+            (known ?: sweep(pool, car, Wireless.PHONE_SETUP_PORT))?.use { it.soTimeout = 5000; it.getInputStream().readBytes().decodeToString() }
+        } finally { pool.shutdownNow() }
+        if (reply == null && quiet) return false
+        val s = Settings(this)
+        val (fix, message) = Wireless.checkSetup(reply, s.wifi())
+        fix?.let { s.ssid = it.ssid; s.password = it.password; s.bssid = it.bssid }
+        if (!quiet || message != lastCheck) say(message)  // a new truck asks every 10 s; don't repeat the same line
+        lastCheck = message
+        return reply != null
     }
 
     private fun connectToPhone(carIp: String) {

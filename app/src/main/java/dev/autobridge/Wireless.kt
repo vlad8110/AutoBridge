@@ -35,8 +35,31 @@ object Wireless {
         val l = text.split("\n")
         if (l.size < 4 || l[0] != "AUTOBRIDGE-WIFI") return null
         val (ssid, bssid, pw) = Triple(l[1], l[2].trim(), l[3])
-        if (ssid.isBlank() || ssid.length > 32 || !MAC.matches(bssid) || pw.length !in 8..63) return null
+        if (ssid.isBlank() || ssid.length > 32 || ssid == "<unknown ssid>" || !MAC.matches(bssid) || bssid == HIDDEN_MAC || pw.length !in 8..63) return null
         return Wifi(ssid, pw, bssid)
+    }
+
+    /** What Android reports instead of the real BSSID when Location is off. */
+    const val HIDDEN_MAC = "02:00:00:00:00:00"
+
+    /**
+     * Compares the phone app's answer ([reply]: null if the app wasn't found) with what the truck has
+     * [saved]. Returns the details to save (null: keep what's saved) and a line for the owner.
+     * The phone is on the hotspot right now, so its network name and BSSID are the real ones.
+     */
+    fun checkSetup(reply: String?, saved: Wifi?): Pair<Wifi?, String> {
+        if (reply == null) return null to "Wi-Fi check: AutoBridge Phone not found. Is the phone on the truck's hotspot with the app open?"
+        val l = reply.split("\n")
+        if (l[0] == "AUTOBRIDGE-WIFI-ERROR") return null to "Wi-Fi check: ${l.getOrNull(1) ?: "the phone app couldn't read the hotspot"}"
+        val w = parseSetup(reply) ?: return null to "Wi-Fi check: the phone app has no hotspot password saved. Tap Password in AutoBridge Phone."
+        if (saved == null) return w to "Got the hotspot details from your phone: ${w.ssid}"
+        val wrong = listOfNotNull(
+            "name".takeIf { w.ssid != saved.ssid },
+            "BSSID".takeIf { !w.bssid.equals(saved.bssid, ignoreCase = true) },
+            "password".takeIf { w.password != saved.password },
+        )
+        if (wrong.isEmpty()) return null to "Wi-Fi check: ${w.ssid} matches your phone"
+        return w to "Wi-Fi check: fixed the hotspot ${wrong.joinToString(" and ")} to match your phone (${w.ssid})"
     }
 
     const val START_REQUEST = 1
@@ -67,13 +90,14 @@ object Wireless {
      * (without it the phone joins the Wi-Fi but never connects), and the start request follows its reply.
      */
     fun handshake(
-        input: InputStream, output: OutputStream, ip: String, wifi: Wifi, port: Int = PORT,
+        input: InputStream, output: OutputStream, ip: String, wifi: () -> Wifi, port: Int = PORT,
         onPhoneOnWifi: () -> Unit = {}, onLink: (invite: () -> Unit) -> Unit = {},
         log: (String) -> Unit,
     ) {
         val src = DataInputStream(input)
         // Asks the phone to (re)join the hotspot and start Android Auto, as a car does after a Wi-Fi drop.
-        val invite = { send(output, START_REQUEST, startRequest(ip, wifi, port)) }
+        // wifi is read each time, so details fixed by a Wi-Fi check reach the phone without a new Bluetooth link.
+        val invite = { send(output, START_REQUEST, startRequest(ip, wifi(), port)) }
         onLink(invite)
         send(output, VERSION_REQUEST, versionRequest(ip, port))
         log("Sent version and car address $ip:$port")
@@ -87,14 +111,16 @@ object Wireless {
                     invite()
                 }
                 INFO_REQUEST -> {
-                    send(output, INFO_RESPONSE, infoResponse(wifi))
-                    log("Sent Wi-Fi ${wifi.ssid}")
+                    val w = wifi()
+                    send(output, INFO_RESPONSE, infoResponse(w))
+                    log("Sent Wi-Fi ${w.ssid}")
                 }
                 START_RESPONSE -> log("Phone start response: status ${firstVarint(payload)}")
                 CONNECTION_STATUS -> {
                     val status = firstVarint(payload)
                     log("Phone Wi-Fi status: $status (0 = connected)")
                     if (status == 0L) onPhoneOnWifi()
+                    else log("The phone couldn't join ${wifi().ssid}. Check the hotspot password, then tap TEST in AutoBridge settings")
                 }
                 else -> log("Phone message $id (${payload.size} bytes)")
             }

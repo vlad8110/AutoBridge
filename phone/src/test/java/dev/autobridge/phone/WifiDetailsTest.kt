@@ -42,4 +42,15 @@ class SetupMessageTest {
         assertEquals("AUTOBRIDGE-WIFI\nMyTruck\n02:1a:2b:3c:4d:5e\nhunter2pass\n",
             WifiDetails("MyTruck", "02:1a:2b:3c:4d:5e", 5240).setupMessage("hunter2pass"))
     }
+
+    @Test fun setupReplyExplainsEachProblem() {
+        val d = WifiDetails("MyTruck", "02:1a:2b:3c:4d:5e", 5240)
+        assertEquals(d.setupMessage("hunter2pass"), WifiDetails.setupReply(true, d, "hunter2pass").first)
+        for ((reply, hint) in listOf(
+            WifiDetails.setupReply(false, d, "hunter2pass") to "Location",
+            WifiDetails.setupReply(true, null, null) to "Wi-Fi",
+            WifiDetails.setupReply(true, WifiDetails("<unknown ssid>", "02:00:00:00:00:00", 0), "x") to "Location",
+            WifiDetails.setupReply(true, d, null) to "Password",
+        )) assert(reply.first.startsWith("AUTOBRIDGE-WIFI-ERROR\n") && hint in reply.first) { reply.first }
+    }
 }

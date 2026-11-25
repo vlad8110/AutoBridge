@@ -22,7 +22,7 @@ class WirelessTest {
         }
         val car = ByteArrayOutputStream()
         try {
-            Wireless.handshake(ByteArrayInputStream(phone.toByteArray()), car, "10.0.0.1", wifi) {}
+            Wireless.handshake(ByteArrayInputStream(phone.toByteArray()), car, "10.0.0.1", { wifi }) {}
         } catch (_: EOFException) { /* phone stream ended */ }
 
         val frames = mutableListOf<Pair<Int, ByteArray>>()
@@ -44,7 +44,7 @@ class WirelessTest {
         val car = ByteArrayOutputStream()
         var invite: (() -> Unit)? = null
         try {
-            Wireless.handshake(ByteArrayInputStream(ByteArray(0)), car, "10.0.0.1", wifi, onLink = { invite = it }) {}
+            Wireless.handshake(ByteArrayInputStream(ByteArray(0)), car, "10.0.0.1", { wifi }, onLink = { invite = it }) {}
         } catch (_: EOFException) { /* phone stream ended */ }
         car.reset()
         invite!!()  // e.g. 10 s after the phone's Wi-Fi dropped
@@ -86,7 +86,36 @@ class SetupMessageTest {
         for (bad in listOf("", "HELLO\nMyTruck\n02:1a:2b:3c:4d:5e\nhunter2pass",
                            "AUTOBRIDGE-WIFI\nMyTruck\nnot-a-mac\nhunter2pass",
                            "AUTOBRIDGE-WIFI\nMyTruck\n02:1a:2b:3c:4d:5e\nshort",
-                           "AUTOBRIDGE-WIFI\n \n02:1a:2b:3c:4d:5e\nhunter2pass"))
+                           "AUTOBRIDGE-WIFI\n \n02:1a:2b:3c:4d:5e\nhunter2pass",
+                           "AUTOBRIDGE-WIFI\nMyTruck\n02:00:00:00:00:00\nhunter2pass",  // Location off: not the real BSSID
+                           "AUTOBRIDGE-WIFI\n<unknown ssid>\n02:1a:2b:3c:4d:5e\nhunter2pass"))
             org.junit.Assert.assertNull(bad, Wireless.parseSetup(bad))
+    }
+}
+
+class WifiCheckTest {
+    private val ok = "AUTOBRIDGE-WIFI\nMyTruck\n02:1a:2b:3c:4d:5e\nhunter2pass\n"
+    private val phone = Wireless.Wifi("MyTruck", "hunter2pass", "02:1a:2b:3c:4d:5e")
+
+    @Test fun newTruckTakesThePhonesDetails() = assertEquals(phone, Wireless.checkSetup(ok, null).first)
+
+    @Test fun matchingDetailsAreKept() {
+        val (fix, line) = Wireless.checkSetup(ok, Wireless.Wifi("MyTruck", "hunter2pass", "02:1A:2B:3C:4D:5E"))
+        org.junit.Assert.assertNull(fix)
+        assert("matches" in line) { line }
+    }
+
+    @Test fun aWrongPasswordIsFixedAndNamed() {
+        val (fix, line) = Wireless.checkSetup(ok, Wireless.Wifi("MyTruck", "hunter2pas", "02:1a:2b:3c:4d:5e"))
+        assertEquals(phone, fix)
+        assert("password" in line && "name" !in line) { line }
+    }
+
+    @Test fun phoneProblemsAreShownAndNothingIsSaved() {
+        val (fix, line) = Wireless.checkSetup("AUTOBRIDGE-WIFI-ERROR\nTurn on Location\n", phone)
+        org.junit.Assert.assertNull(fix)
+        assert("Turn on Location" in line) { line }
+        org.junit.Assert.assertNull(Wireless.checkSetup("", phone).first)  // older phone app: hangs up with nothing
+        org.junit.Assert.assertNull(Wireless.checkSetup(null, phone).first)
     }
 }
