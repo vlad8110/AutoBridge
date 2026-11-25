@@ -510,6 +510,8 @@ class Settings(context: Context) {
     /** The truck bar under Android Auto (settings page). */
     var barEnabled: Boolean get() = p.getBoolean("bar", true); set(v) = p.edit().putBoolean("bar", v).apply()
     /** Offer the sharper H.265 1440p picture (settings page); off forces the proven 1080p. */
+    /** The truck's own status bar at the top (settings page); off gives Android Auto that space too. */
+    var statusBarShown: Boolean get() = p.getBoolean("statusBar", true); set(v) = p.edit().putBoolean("statusBar", v).apply()
     var hevcEnabled: Boolean get() = p.getBoolean("hevc", true); set(v) = p.edit().putBoolean("hevc", v).apply()
 
     fun forget() = p.edit().remove("ssid").remove("password").remove("bssid").apply()

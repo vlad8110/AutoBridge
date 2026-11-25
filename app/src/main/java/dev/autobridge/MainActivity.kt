@@ -46,7 +46,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         surface = SurfaceView(this).apply { holder.addCallback(this@MainActivity) }
         // The waiting screen looks like a Linux console: monospace, coloured status tags, blinking cursor.
         status = TextView(this).apply { textSize = 20f; typeface = Typeface.MONOSPACE; setLineSpacing(8f, 1f) }
-        settingsPanel = SettingsPanel(this, editWifi = ::editWifi, toast = ::show)
+        settingsPanel = SettingsPanel(this, editWifi = ::editWifi, toast = ::show, onStatusBar = ::applyStatusBar)
         val settings = Button(this).apply { text = "Settings"; textSize = 18f; typeface = Typeface.MONOSPACE; setOnClickListener { settingsPanel.open() } }
         // The truck's data in a smoky-glass strip under Android Auto (always shown).
         truckBar = TruckBar(this).apply { onSettings = { settingsPanel.open() } }
@@ -92,6 +92,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         if (Settings(this).wifi() == null) show("Waiting for Wi-Fi details: open AutoBridge Phone on the truck hotspot, or set them in Wi-Fi settings.")
         panel.visibility = if (BridgeService.instance?.video != null) View.GONE else View.VISIBLE
         if (BridgeService.instance?.video == null) applyBar()
+        applyStatusBar()
         status.postDelayed(blink, 500)
     }
 
@@ -105,6 +106,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     /** Shows or hides the bar per the setting; only between connections, so Android Auto's shape stays right. */
+    /** Shows or hides the truck's status bar per the setting (a swipe from the top still shows it for a moment). */
+    private fun applyStatusBar() {
+        val c = window.insetsController ?: return
+        if (Settings(this).statusBarShown) c.show(android.view.WindowInsets.Type.statusBars())
+        else {
+            c.systemBarsBehavior = android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            c.hide(android.view.WindowInsets.Type.statusBars())
+        }
+    }
+
     private fun applyBar() { truckBar.visibility = if (Settings(this).barEnabled) View.VISIBLE else View.GONE }
 
     // ---- video surface ----

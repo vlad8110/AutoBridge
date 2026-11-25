@@ -14,7 +14,7 @@ import android.widget.TextView
  * AutoBridge settings, shown over Android Auto when the owner taps the bar's port chip (or the
  * waiting screen's Settings button). Android Auto keeps running underneath.
  */
-class SettingsPanel(context: Context, private val editWifi: () -> Unit, private val toast: (String) -> Unit) : FrameLayout(context) {
+class SettingsPanel(context: Context, private val editWifi: () -> Unit, private val toast: (String) -> Unit, private val onStatusBar: () -> Unit) : FrameLayout(context) {
     private val s = Settings(context)
     private val hotspot = text(18f)
     private val hotspotDetail = text(13f, MUTED, mono = true)
@@ -37,6 +37,7 @@ class SettingsPanel(context: Context, private val editWifi: () -> Unit, private 
             section("Display")
             addView(card(
                 toggle("Truck bar", "Battery, range, speed and power under Android Auto. Applies next time the phone connects.", s.barEnabled) { s.barEnabled = it },
+                toggle("Truck status bar", "The truck's own bar at the top (time, phone, notifications). Off gives Android Auto that space (fits properly from the next connection); swipe down from the top to see it.", s.statusBarShown) { s.statusBarShown = it; onStatusBar() },
                 toggle("Sharper picture", "1440p (H.265); falls back to 1080p by itself. Applies next time the phone connects.", s.hevcEnabled) { s.hevcEnabled = it },
             ))
             section("Truck hotspot")
