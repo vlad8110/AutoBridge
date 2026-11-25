@@ -85,7 +85,7 @@ class BridgeService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        Logs.startCapture()
+        Logs.startCapture(this)
         audio = AudioOut(getSystemService(AudioManager::class.java)) { say("The car took the speakers (another audio source started)") }
         // At boot only connectedDevice is allowed; the screen upgrades to media + mic when it opens.
         startForeground(1, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)

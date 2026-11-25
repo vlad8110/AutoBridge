@@ -3,6 +3,8 @@ package dev.autobridge
 import android.content.Context
 import android.os.Build
 import android.os.Process
+import java.io.File
+import java.io.FileWriter
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -20,24 +22,46 @@ object Logs {
     fun name(reason: String, now: Date = Date()): String =
         "autobridge-" + SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(now) + "-" + reason.lowercase().filter { it.isLetterOrDigit() } + ".txt"
 
-    private val lines = ArrayDeque<String>()
     @Volatile private var capturing = false
+    private var dir: File? = null
 
     /**
-     * Keeps this process's log in memory from the start: GM's shared log buffer is so busy that
-     * reading it later only reached back a few seconds.
+     * Writes this process's log (logcat for our pid) to a file as it happens, so it survives Exit,
+     * a force close or a crash and goes out with the next log. GM's shared log buffer is so busy
+     * that reading it later only reached back a few seconds.
      */
-    fun startCapture() {
+    fun startCapture(context: Context) {
         if (capturing) return
         capturing = true
+        val d = File(context.filesDir, "logs").apply { mkdirs() }
+        dir = d
         thread(name = "ab-logcat", isDaemon = true) {
             runCatching {
+                var out = FileWriter(File(d, CURRENT), true)
+                val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
+                out.write("==== AutoBridge $version started ${Date()} (process ${Process.myPid()}) ====\n"); out.flush()
                 val p = Runtime.getRuntime().exec(arrayOf("logcat", "-v", "time", "--pid=${Process.myPid()}"))
-                p.inputStream.bufferedReader().forEachLine { l -> synchronized(lines) { lines.addLast(l); if (lines.size > 5000) lines.removeFirst() } }
+                p.inputStream.bufferedReader().forEachLine { l ->
+                    out.write(l); out.write("\n"); out.flush()  // flushed per line: nothing is lost if we die
+                    if (rotate(d)) { out.close(); out = FileWriter(File(d, CURRENT), true) }
+                }
             }
             capturing = false
         }
     }
+
+    /** Past [MAX_BYTES], the current file becomes the previous one (the old previous is deleted). */
+    fun rotate(d: File, maxBytes: Long = MAX_BYTES): Boolean {
+        val cur = File(d, CURRENT)
+        if (cur.length() < maxBytes) return false
+        cur.renameTo(File(d, PREVIOUS).apply { delete() })
+        return true
+    }
+
+    /** The last [max] lines of the saved log, older file first. */
+    fun saved(d: File, max: Int = 10_000): String =
+        listOf(PREVIOUS, CURRENT).map { File(d, it) }.filter { it.exists() }
+            .flatMap { it.readLines() }.takeLast(max).joinToString("\n")
 
     fun collect(context: Context, reason: String, header: List<String>): ByteArray {
         val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
@@ -46,9 +70,9 @@ object Logs {
             appendLine("Time: ${Date()}")
             appendLine("Car: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
             header.forEach { appendLine(it) }
-            appendLine("---- log ----")
+            appendLine("---- log (saved on the truck, survives restarts; newest last) ----")
         }
-        val kept = synchronized(lines) { lines.joinToString("\n") }
+        val kept = dir?.let { runCatching { saved(it) }.getOrNull() }.orEmpty()
         val log = kept.ifEmpty {
             runCatching {
                 val p = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "--pid=${Process.myPid()}"))
@@ -57,6 +81,11 @@ object Logs {
         }
         return (top + log + "\n").toByteArray()
     }
+
+    private const val CURRENT = "autobridge.log"
+    private const val PREVIOUS = "autobridge.1.log"
+    /** Two files of this size at most: about 4 MB, several hours of driving. */
+    private const val MAX_BYTES = 2L * 1024 * 1024
 
     /** Header, name line, length line, then the file. Must match LogReceiver in the phone app. */
     @Throws(IOException::class)

@@ -69,7 +69,8 @@ Android Auto talks to the relay on its own phone and the truck connects out to t
   press, choose *AutoBridge* as the truck's digital assistant (Settings, Voice button). That replaces
   the truck's own Google Assistant while it's selected.
 - **Logs:** in AutoBridge Phone, tap **Send log from truck** while Android Auto is running, or use
-  Send log in Settings. Logs are saved to the folder you pick in AutoBridge Phone. A log is also
+  Send log in Settings. The truck keeps its log in a file (up to about 4 MB, oldest trimmed), so
+  a log sent after a restart or force close still shows what happened before it. Logs are saved to the folder you pick in AutoBridge Phone. A log is also
   sent automatically when Android Auto disconnects with an error.
 
 ## Troubleshooting
@@ -131,7 +132,7 @@ Signed release builds read the key from environment variables, so no secret live
 
 ```bash
 AB_KEYSTORE=/path/upload.jks AB_KEYSTORE_PASSWORD=... \
-  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=34 -PversionName=0.4.9
+  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=35 -PversionName=0.5.0
 ```
 
 Tests: `./gradlew :app:testDebugUnitTest :phone:testDebugUnitTest`.
