@@ -86,6 +86,7 @@ class BridgeService : Service() {
         startForeground(1, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
         watchDrivingState()
         thread(name = "ab-bluetooth") { bluetoothLoop() }
+        thread(name = "ab-logline", isDaemon = true) { logRequestLoop() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -265,6 +266,31 @@ class BridgeService : Service() {
     fun key(code: Int) { handle.takeIf { it != 0L }?.let { Native.key(it, code) } }
 
     /** Saves a log file on the phone (Phone Sync folder), over the hotspot. [auto]: after a failure, at most every 2 min. */
+    /**
+     * The phone can't connect to the car (the hotspot blocks it), so the car keeps a line open to the
+     * phone app; each 'L' the phone sends on it asks for a log.
+     */
+    private fun logRequestLoop() {
+        while (running) {
+            val ip = phoneIp
+            if (ip == null) { Thread.sleep(5000); continue }
+            try {
+                Socket().use { s ->
+                    carIp()?.let { s.bind(InetSocketAddress(it, 0)) }
+                    s.connect(InetSocketAddress(ip, Wireless.PHONE_LOG_REQUEST_PORT), 3000)
+                    s.keepAlive = true
+                    val input = s.getInputStream()
+                    while (running) {
+                        val b = input.read()
+                        if (b < 0) break
+                        if (b == 'L'.code) sendLogs("phone")
+                    }
+                }
+            } catch (_: IOException) { /* phone app gone or older; try again shortly */ }
+            Thread.sleep(5000)
+        }
+    }
+
     fun sendLogs(reason: String, auto: Boolean = false) {
         val now = System.currentTimeMillis()
         if (auto && now - lastAutoLog < 120_000) return

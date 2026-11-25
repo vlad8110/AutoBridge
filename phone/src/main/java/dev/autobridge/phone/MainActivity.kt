@@ -37,6 +37,17 @@ class MainActivity : Activity() {
         val copy = Button(this).apply { text = "Copy Wi-Fi details"; setOnClickListener { copyWifi() } }
         logText = label(15f)
         val pick = Button(this).apply { text = "Choose log folder"; setOnClickListener { pickFolder() } }
+        val request = Button(this).apply {
+            text = "Send log from truck"
+            setOnClickListener {
+                Thread {
+                    val ok = RelayService.requestLog()
+                    runOnUiThread {
+                        Toast.makeText(this@MainActivity, if (ok) "Asked the truck; the log arrives in a few seconds" else "The truck isn't connected to this phone", Toast.LENGTH_SHORT).show()
+                    }
+                }.start()
+            }
+        }
         setContentView(ScrollView(this).apply {
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -51,6 +62,7 @@ class MainActivity : Activity() {
                 addView(statusText)
                 addView(label(22f).apply { text = "Logs from the truck" })
                 addView(logText)
+                addView(request)
                 addView(pick)
                 addView(label(14f).apply { text = "Leave this installed; it starts by itself when the phone boots." })
             })

@@ -21,6 +21,8 @@ object Wireless {
     const val PHONE_CAR_PORT = 5300
     /** The phone app saves logs the car sends here. Must match LogReceiver in the phone app. */
     const val PHONE_LOG_PORT = 5301
+    /** The car holds a line open here so the phone app's "Send log" can ask for one. Must match RelayService. */
+    const val PHONE_LOG_REQUEST_PORT = 5302
 
     const val START_REQUEST = 1
     const val INFO_REQUEST = 2
