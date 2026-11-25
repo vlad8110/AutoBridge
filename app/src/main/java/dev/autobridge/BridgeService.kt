@@ -69,6 +69,7 @@ class BridgeService : Service() {
     @Volatile private var truck = Truck()
     @Volatile private var phoneIp: String? = null
     private var lastAutoLog = 0L
+    private var btDownSince = 0L
     /** Started at boot and the screen not opened since: bring the screen up when the phone connects. */
     @Volatile private var openScreenOnConnect = false
     private var watchingGps = false
@@ -151,6 +152,7 @@ class BridgeService : Service() {
         while (running) {
             try {
                 adapter.listenUsingRfcommWithServiceRecord("AutoBridge", UUID.fromString(Wireless.UUID)).use { server ->
+                    if (btDownSince != 0L) { Log.i(TAG, "Bluetooth back after ${(System.currentTimeMillis() - btDownSince) / 1000} s"); btDownSince = 0L }
                     say("Waiting for phone over Bluetooth…")
                     val socket = server.accept()
                     thread(name = "ab-handshake") {
@@ -166,7 +168,9 @@ class BridgeService : Service() {
                     }
                 }
             } catch (e: IOException) {
-                Log.w(TAG, "bluetooth", e)
+                // One line per outage, not a stack trace every 2 s: a parked truck's Bluetooth can be off for
+                // hours, and those traces pushed everything else out of the log.
+                if (btDownSince == 0L) { btDownSince = System.currentTimeMillis(); Log.w(TAG, "Bluetooth not ready (${e.message}); retrying quietly") }
                 Thread.sleep(2000)
             }
         }
