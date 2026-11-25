@@ -61,6 +61,9 @@ Android Auto talks to the relay on its own phone and the truck connects out to t
   - *Truck bar*, *Truck status bar* and *Sharper picture* tiles. Android Auto only measures the
     screen when it connects, so when you go back after changing one, AutoBridge closes and
     reopens by itself and the phone reconnects at the new size.
+  - An EV battery panel: charge level with your charge limit, energy, range, and while charging
+    the power, time to the limit, the time it'll be ready, range added per hour, energy still to
+    add and the current limit, all live.
   - Hotspot details (Edit, Forget), the voice button setting, Send log, version.
 - **Voice button:** a long press usually reaches the phone's assistant over Bluetooth. For a short
   press, choose *AutoBridge* as the truck's digital assistant (Settings, Voice button). That replaces
@@ -128,7 +131,7 @@ Signed release builds read the key from environment variables, so no secret live
 
 ```bash
 AB_KEYSTORE=/path/upload.jks AB_KEYSTORE_PASSWORD=... \
-  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=32 -PversionName=0.4.7
+  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=33 -PversionName=0.4.8
 ```
 
 Tests: `./gradlew :app:testDebugUnitTest :phone:testDebugUnitTest`.

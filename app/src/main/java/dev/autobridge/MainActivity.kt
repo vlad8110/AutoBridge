@@ -83,7 +83,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     override fun onResume() {
         super.onResume()
         BridgeService.onStatus = { show(it) }
-        BridgeService.onTruck = { truckBar.show(it) }
+        BridgeService.onTruck = { truckBar.show(it); settingsPanel.showTruck(it) }
         truckBar.show(BridgeService.latestTruck)
         BridgeService.instance?.fullForeground()
         ClusterNav.resumed(this)

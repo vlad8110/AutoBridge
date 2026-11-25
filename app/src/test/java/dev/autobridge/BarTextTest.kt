@@ -55,3 +55,27 @@ class BarTextTest {
         assertEquals("7.4", BarText.number(7.36f)); assertEquals("8", BarText.number(8f)); assertEquals("62", BarText.number(62.4f))
     }
 }
+
+class BatteryInfoTest {
+    private val charging = Truck(gear = 0x4, batteryWh = 164_290f, capacityWh = 206_670f, rangeM = 613_984f,
+        rateMw = -8_000_000f, chargeState = 1, chargeSec = 900, chargeLimit = 80f, currentA = 48f, portOpen = true, portConnected = true, miles = true)
+
+    @Test fun chargingDetails() {
+        val i = BatteryInfo.of(charging, true, java.time.LocalTime.of(22, 50))
+        assertEquals(BatteryInfo.State.CHARGING, i.state); assertEquals(79, i.percent); assertEquals(0.8f, i.limit!!, 1e-6f)
+        assertEquals("164 of 207 kWh", i.energy); assertEquals("382", i.range)
+        assertEquals("8 kW", i.power); assertEquals("TIME TO 80%", i.timeLabel); assertEquals("15 min", i.timeLeft)
+        assertEquals("11:05 PM", i.readyBy)
+        assertEquals("+19 mi/h", i.adding)  // 8 kW × (613,984 m / 164,290 Wh) = 29.9 km per hour
+        assertEquals("TO 80%", i.toAddLabel); assertEquals("1 kWh", i.toAdd)  // 165.3 kWh wanted, 164.3 there
+        assertEquals("48 A", i.current)
+    }
+
+    @Test fun notChargingShowsDashes() {
+        val i = BatteryInfo.of(charging.copy(chargeState = 3, portConnected = false, portOpen = false, rateMw = 20_000_000f, batteryWh = 100_000f), true, java.time.LocalTime.NOON)
+        assertEquals(BatteryInfo.State.ON_BATTERY, i.state)
+        assertEquals("—", i.power); assertEquals("—", i.timeLeft); assertEquals("—", i.readyBy); assertEquals("—", i.adding)
+        assertEquals("65 kWh", i.toAdd)  // 165.3 − 100 kWh to reach the 80% limit
+        assertEquals(BatteryInfo.State.PLUGGED, BatteryInfo.of(charging.copy(chargeState = 3, rateMw = 0f), true, java.time.LocalTime.NOON).state)
+    }
+}

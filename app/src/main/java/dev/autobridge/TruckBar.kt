@@ -302,7 +302,7 @@ class TruckBar(context: Context) : FrameLayout(context) {
                     a = 0.11f + 0.11f * kotlin.math.sin(android.os.SystemClock.uptimeMillis() / 1800f * 2 * Math.PI.toFloat())
                     postInvalidateDelayed(60)
                 }
-                p.style = Paint.Style.FILL
+                fill(BLACK)  // opaque: a paint's alpha also fades its gradient
                 p.shader = android.graphics.RadialGradient(176f, 132f, 112f, (color and 0xFFFFFF) or ((a * 255).toInt() shl 24), color and 0xFFFFFF, android.graphics.Shader.TileMode.CLAMP)
                 c.drawCircle(176f, 132f, 112f, p); p.shader = null
             }
