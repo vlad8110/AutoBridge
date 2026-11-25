@@ -1,7 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Without this, Android 15 draws the page under the title bar and hides the first lines. -->
-    <style name="AutoBridgePhone" parent="@android:style/Theme.DeviceDefault">
+    <!-- No title bar: the app draws its own header. Opting out of edge-to-edge keeps content below the status bar. -->
+    <style name="AutoBridgePhone" parent="@android:style/Theme.DeviceDefault.NoActionBar">
         <item name="android:windowOptOutEdgeToEdgeEnforcement" tools:targetApi="35">true</item>
+        <item name="android:statusBarColor">#0D0F13</item>
+        <item name="android:navigationBarColor">#0D0F13</item>
+        <item name="android:windowBackground">@android:color/black</item>
     </style>
 </resources>

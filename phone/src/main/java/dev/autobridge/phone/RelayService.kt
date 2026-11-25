@@ -132,6 +132,7 @@ class RelayService : Service() {
     /** Keeps the last few steps on screen, so a screenshot shows which side never arrived. */
     @Synchronized private fun say(text: String) {
         Log.i("AutoBridgePhone", text)
+        if (recent.lastOrNull()?.endsWith("  $text") == true) return  // both pipe directions report the same end
         val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
         recent.addLast("$time  $text")
         if (recent.size > 8) recent.removeFirst()
