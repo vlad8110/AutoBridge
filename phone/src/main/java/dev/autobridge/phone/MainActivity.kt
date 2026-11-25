@@ -112,6 +112,7 @@ class MainActivity : Activity() {
                 LinearLayout(context).apply {
                     addView(chipButton("Refresh") { showWifi() }, lp(weight = 1f))
                     addView(chipButton("Copy") { copyWifi() }, lp(weight = 1f).apply { marginStart = dp(8) })
+                    addView(chipButton("Password") { editPassword() }, lp(weight = 1f).apply { marginStart = dp(8) })
                 }.also { it.layoutParams = lp(12) }), lp(14))
             addView(card("Relay", statusText), lp(12))
             addView(card("Logs from the truck", request,
@@ -190,7 +191,7 @@ class MainActivity : Activity() {
         bssidText.visibility = if (d == null) View.GONE else View.VISIBLE
         channelText.text = d?.channel?.toString() ?: "—"
         mhzText.text = d?.let { "${it.frequencyMhz} MHz" } ?: "—"
-        wifiNote.text = problem ?: d?.band
+        wifiNote.text = problem ?: d?.let { "${it.band} · password " + if (WifiDetails.password(this, it.ssid) != null) "saved, a new truck can set itself up" else "not saved" }
     }
 
     private fun showLogFolder() {
@@ -214,6 +215,22 @@ class MainActivity : Activity() {
         const val TEXT = 0xFFEEF0F4.toInt()
         const val MUTED = 0xFFA9B0BC.toInt()
         const val ACCENT = 0xFF9FE1CB.toInt()
+    }
+
+    /** Saved per hotspot name; a truck with no Wi-Fi details gets it from here (Android never shows apps saved passwords). */
+    private fun editPassword() {
+        val d = details ?: return Toast.makeText(this, "Join the truck's hotspot first", Toast.LENGTH_SHORT).show()
+        val field = android.widget.EditText(this).apply {
+            hint = "Hotspot password"; setText(WifiDetails.password(context, d.ssid) ?: "")
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        android.app.AlertDialog.Builder(this).setTitle("${d.ssid} password").setView(field)
+            .setPositiveButton("Save") { _, _ ->
+                val pw = field.text.toString()
+                if (pw.length !in 8..63) Toast.makeText(this, "A hotspot password is 8 to 63 characters", Toast.LENGTH_SHORT).show()
+                else { WifiDetails.setPassword(this, d.ssid, pw); showWifi() }
+            }
+            .setNegativeButton("Cancel", null).show()
     }
 
     private fun copyWifi() {

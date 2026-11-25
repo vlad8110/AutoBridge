@@ -34,3 +34,11 @@ class LogSaverTest {
         }
     }
 }
+
+class SetupMessageTest {
+    @Test fun matchesWhatTheTruckParses() {
+        // Same text as SetupMessageTest in the car app expects.
+        assertEquals("AUTOBRIDGE-WIFI\nMyTruck\n02:1a:2b:3c:4d:5e\nhunter2pass\n",
+            WifiDetails("MyTruck", "02:1a:2b:3c:4d:5e", 5240).setupMessage("hunter2pass"))
+    }
+}

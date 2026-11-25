@@ -87,6 +87,7 @@ class BridgeService : Service() {
         watchDrivingState()
         thread(name = "ab-bluetooth") { bluetoothLoop() }
         thread(name = "ab-logline", isDaemon = true) { logRequestLoop() }
+        thread(name = "ab-setup", isDaemon = true) { setupLoop() }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -175,24 +176,56 @@ class BridgeService : Service() {
      * Finds the AutoBridge Phone relay on the hotspot and connects out to it (the hotspot only
      * allows car -> phone connections). Tries every address in our /24 at once, for up to ~30 s.
      */
+    /** One pass over every address in the car's /24: the first that accepts on [port], or null. */
+    private fun sweep(pool: java.util.concurrent.ExecutorService, carIp: String, port: Int): Socket? {
+        val prefix = carIp.substringBeforeLast('.')
+        val tasks = (1..254).map { "$prefix.$it" }.filter { it != carIp }.map { host ->
+            java.util.concurrent.Callable {
+                Socket().also { s ->
+                    try {
+                        s.bind(InetSocketAddress(carIp, 0))  // leave through the hotspot interface
+                        s.connect(InetSocketAddress(host, port), 700)
+                    } catch (e: IOException) { s.close(); throw e }
+                }
+            }
+        }
+        return try { pool.invokeAny(tasks) } catch (_: java.util.concurrent.ExecutionException) { null }
+    }
+
+    /**
+     * No Wi-Fi details yet (a new truck): ask the AutoBridge Phone app on the hotspot for them.
+     * Typing them in Wi-Fi settings still works, and once saved this stops asking.
+     */
+    private fun setupLoop() {
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(64)
+        while (running) {
+            val s = Settings(this)
+            val ip = carIp()
+            if (s.wifi() == null && ip != null) {
+                runCatching {
+                    sweep(pool, ip, Wireless.PHONE_SETUP_PORT)?.use { socket ->
+                        socket.soTimeout = 5000
+                        val w = Wireless.parseSetup(socket.getInputStream().readBytes().decodeToString())
+                        if (w == null) say("The phone app sent no usable Wi-Fi details (set the hotspot password in the phone app)")
+                        else if (s.wifi() == null) {
+                            s.ssid = w.ssid; s.password = w.password; s.bssid = w.bssid
+                            say("Got the hotspot details from your phone: ${w.ssid}")
+                        }
+                    }
+                }
+            }
+            Thread.sleep(10_000)
+        }
+        pool.shutdownNow()
+    }
+
     private fun connectToPhone(carIp: String) {
         if (!searching.compareAndSet(false, true)) return
         val pool = java.util.concurrent.Executors.newFixedThreadPool(64)
         try {
             say("Looking for the AutoBridge Phone app on the hotspot…")
-            val prefix = carIp.substringBeforeLast('.')
-            val tasks = (1..254).map { "$prefix.$it" }.filter { it != carIp }.map { host ->
-                java.util.concurrent.Callable {
-                    Socket().also { s ->
-                        try {
-                            s.bind(InetSocketAddress(carIp, 0))  // leave through the hotspot interface
-                            s.connect(InetSocketAddress(host, Wireless.PHONE_CAR_PORT), 700)
-                        } catch (e: IOException) { s.close(); throw e }
-                    }
-                }
-            }
             repeat(15) {
-                val socket = try { pool.invokeAny(tasks) } catch (_: java.util.concurrent.ExecutionException) { null }
+                val socket = sweep(pool, carIp, Wireless.PHONE_CAR_PORT)
                 if (socket != null) {
                     phoneIp = socket.inetAddress.hostAddress
                     say("Found phone at $phoneIp")
@@ -442,6 +475,8 @@ class Settings(context: Context) {
         get() = p.getLong("hevcFailedIn", -1) == version
         set(v) = p.edit().putLong("hevcFailedIn", if (v) version else -1).apply()
     private val version = context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
+
+    fun forget() = p.edit().remove("ssid").remove("password").remove("bssid").apply()
 
     fun wifi() = if (ssid.isEmpty() || password.isEmpty() || bssid.isEmpty()) null else Wireless.Wifi(ssid, password, bssid)
 }

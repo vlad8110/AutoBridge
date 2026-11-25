@@ -61,3 +61,18 @@ class WirelessTest {
         assert(Wireless.startRequest("127.0.0.1", Wireless.Wifi("MyTruck", "x", "02:1a:2b:3c:4d:5e")).size < 65535)
     }
 }
+
+class SetupMessageTest {
+    @Test fun phoneDetailsAreAccepted() {
+        assertEquals(Wireless.Wifi("MyTruck", "hunter2pass", "02:1a:2b:3c:4d:5e"),
+            Wireless.parseSetup("AUTOBRIDGE-WIFI\nMyTruck\n02:1a:2b:3c:4d:5e\nhunter2pass\n"))
+    }
+
+    @Test fun badMessagesAreRefused() {
+        for (bad in listOf("", "HELLO\nMyTruck\n02:1a:2b:3c:4d:5e\nhunter2pass",
+                           "AUTOBRIDGE-WIFI\nMyTruck\nnot-a-mac\nhunter2pass",
+                           "AUTOBRIDGE-WIFI\nMyTruck\n02:1a:2b:3c:4d:5e\nshort",
+                           "AUTOBRIDGE-WIFI\n \n02:1a:2b:3c:4d:5e\nhunter2pass"))
+            org.junit.Assert.assertNull(bad, Wireless.parseSetup(bad))
+    }
+}

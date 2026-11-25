@@ -27,6 +27,7 @@ class RelayService : Service() {
         const val CAR_PORT = 5300  // must match Wireless.PHONE_CAR_PORT in the car app
         const val LOG_PORT = 5301  // must match Wireless.PHONE_LOG_PORT in the car app
         const val LOG_REQUEST_PORT = 5302  // must match Wireless.PHONE_LOG_REQUEST_PORT in the car app
+        const val SETUP_PORT = 5303  // must match Wireless.PHONE_SETUP_PORT in the car app
         @Volatile private var carLine: Socket? = null
 
         /** Asks the truck for its log over the line the truck keeps open; false if the truck isn't connected. */
@@ -61,6 +62,7 @@ class RelayService : Service() {
         listen("Android Auto", InetSocketAddress(InetAddress.getByName("127.0.0.1"), AA_PORT)) { offer(aa = it) }
         listen("car", InetSocketAddress(CAR_PORT)) { offer(car = it) }
         listen("car log", InetSocketAddress(LOG_PORT)) { s -> thread { saveLog(s) } }
+        listen("new truck", InetSocketAddress(SETUP_PORT)) { s -> thread { sendSetup(s) } }
         listen("car log line", InetSocketAddress(LOG_REQUEST_PORT)) { s -> carLine?.let { runCatching { it.close() } }; carLine = s }
         say("Ready. Waiting for the car.")
     }
@@ -103,6 +105,15 @@ class RelayService : Service() {
         }
         say("Android Auto is running through the car")
         pipe(pair.first, pair.second)
+    }
+
+    /** A truck without Wi-Fi details asks for the hotspot we're on; only answered once its password is saved here. */
+    private fun sendSetup(s: Socket) = s.use {
+        val d = runCatching { WifiDetails.current(getSystemService(android.net.wifi.WifiManager::class.java)) }.getOrNull()
+        val pw = d?.let { WifiDetails.password(this, it.ssid) }
+        if (d == null || pw == null) return@use say("A new truck asked for its Wi-Fi details; set the hotspot password in this app")
+        runCatching { it.getOutputStream().write(d.setupMessage(pw).toByteArray()) }
+        say("Sent ${d.ssid} details to the truck")
     }
 
     private fun saveLog(s: Socket) = s.use {

@@ -13,9 +13,18 @@ data class WifiDetails(val ssid: String, val bssid: String, val frequencyMhz: In
         else -> "unknown band"
     }
 
+    /** For a new truck: what AutoBridge on the truck saves (Wireless.parseSetup in the car app). */
+    fun setupMessage(password: String) = "AUTOBRIDGE-WIFI\n$ssid\n$bssid\n$password\n"
+
     fun asText() = "Network (SSID): $ssid\nBSSID: $bssid\nChannel: $channel ($band, $frequencyMhz MHz)"
 
     companion object {
+        /** The hotspot password the owner typed in, per network name (Android never lets apps read saved ones). */
+        fun password(context: android.content.Context, ssid: String): String? =
+            context.getSharedPreferences("hotspots", android.content.Context.MODE_PRIVATE).getString(ssid, null)
+        fun setPassword(context: android.content.Context, ssid: String, password: String) =
+            context.getSharedPreferences("hotspots", android.content.Context.MODE_PRIVATE).edit().putString(ssid, password).apply()
+
         fun channelOf(mhz: Int): Int = when {
             mhz == 2484 -> 14
             mhz in 2412..2472 -> (mhz - 2407) / 5

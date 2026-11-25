@@ -23,6 +23,21 @@ object Wireless {
     const val PHONE_LOG_PORT = 5301
     /** The car holds a line open here so the phone app's "Send log" can ask for one. Must match RelayService. */
     const val PHONE_LOG_REQUEST_PORT = 5302
+    /** A truck with no Wi-Fi details asks the phone app for them here. Must match RelayService.SETUP_PORT. */
+    const val PHONE_SETUP_PORT = 5303
+    private val MAC = Regex("([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}")
+
+    /**
+     * The phone app's answer: "AUTOBRIDGE-WIFI", SSID, BSSID, password, one per line.
+     * Null for anything else, so a bad message is never saved (WPA2 passwords are 8-63 characters).
+     */
+    fun parseSetup(text: String): Wifi? {
+        val l = text.split("\n")
+        if (l.size < 4 || l[0] != "AUTOBRIDGE-WIFI") return null
+        val (ssid, bssid, pw) = Triple(l[1], l[2].trim(), l[3])
+        if (ssid.isBlank() || ssid.length > 32 || !MAC.matches(bssid) || pw.length !in 8..63) return null
+        return Wifi(ssid, pw, bssid)
+    }
 
     const val START_REQUEST = 1
     const val INFO_REQUEST = 2

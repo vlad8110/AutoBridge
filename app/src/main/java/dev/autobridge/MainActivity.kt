@@ -99,7 +99,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         ClusterNav.resumed(this)
         BridgeService.onVideoActive = { active -> panel.visibility = if (active) View.GONE else View.VISIBLE; fitSurface() }
         show(BridgeService.status)
-        if (Settings(this).wifi() == null) show("First, enter your car's Wi-Fi hotspot details.")
+        if (Settings(this).wifi() == null) show("Waiting for Wi-Fi details: open AutoBridge Phone on the truck hotspot, or set them in Wi-Fi settings.")
         panel.visibility = if (BridgeService.instance?.video != null) View.GONE else View.VISIBLE
         status.postDelayed(blink, 500)
     }
@@ -180,6 +180,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 }
                 s.ssid = ssid.text.toString(); s.password = pass.text.toString(); s.bssid = mac
                 show("Saved. Waiting for phone…")
+            }
+            .setNeutralButton("Forget") { _, _ ->
+                s.forget()
+                show("Wi-Fi details forgotten. Set them here, or open AutoBridge Phone on the hotspot to send them.")
             }
             .setNegativeButton("Cancel", null).show()
     }
