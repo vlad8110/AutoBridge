@@ -369,7 +369,7 @@ class BridgeService : Service() {
         private var firstFrame = true
         override fun onVideo(data: ByteArray, timestampUs: Long) {
             decoder?.frame(data, timestampUs)
-            if (firstFrame) { firstFrame = false; main.post { onVideoActive?.invoke(true) } }
+            if (firstFrame) { firstFrame = false; Log.i(TAG, "first video frame${if (onVideoActive == null) " (screen not in front)" else ""}"); main.post { onVideoActive?.invoke(true) } }
         }
         override fun onAudio(stream: Int, pcm: ByteArray) = audio.write(stream, pcm)
         override fun onAudioState(stream: Int, playing: Boolean) = audio.state(stream, playing)

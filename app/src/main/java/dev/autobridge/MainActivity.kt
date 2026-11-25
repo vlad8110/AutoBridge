@@ -93,6 +93,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         panel.visibility = if (BridgeService.instance?.video != null) View.GONE else View.VISIBLE
         if (BridgeService.instance?.video == null) applyBar()
         applyStatusBar()
+        fitSurface()  // a session may have started while this screen was paused (its callbacks were off)
         status.postDelayed(blink, 500)
     }
 
@@ -143,10 +144,14 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     /** Make the surface bigger than the screen by the margin amount so the margins fall off the edges. */
     private fun fitSurface() {
         val v = BridgeService.instance?.video ?: return
+        if (root.width == 0) return  // not laid out yet; the layout listener calls this again
         val w = root.width * v.codecW / v.contentW
         val h = root.height * v.codecH / v.contentH
         val lp = surface.layoutParams as FrameLayout.LayoutParams
-        if (lp.width != w || lp.height != h) surface.layoutParams = FrameLayout.LayoutParams(w, h, Gravity.CENTER)
+        if (lp.width != w || lp.height != h) {
+            surface.layoutParams = FrameLayout.LayoutParams(w, h, Gravity.CENTER)
+            android.util.Log.i("AutoBridge", "picture fitted: ${w}x$h for ${root.width}x${root.height}")
+        }
     }
 
     // ---- touch ----
