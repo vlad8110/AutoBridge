@@ -60,7 +60,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             setBackgroundColor(Console.BACKGROUND)
             setPadding(64, 48, 64, 48)
             addView(status, LinearLayout.LayoutParams(-1, 0, 1f))
-            addView(LinearLayout(context).apply { addView(settings); addView(logs) }, LinearLayout.LayoutParams(-2, -2))
+            addView(LinearLayout(context).apply {
+                addView(settings); addView(logs)
+                VoiceAssistant.picker(context)?.let { picker ->
+                    addView(Button(context).apply {
+                        text = "Voice button"; textSize = 18f; typeface = Typeface.MONOSPACE
+                        setOnClickListener { show(VoiceAssistant.status(context)); runCatching { startActivity(picker) } }
+                    })
+                }
+            }, LinearLayout.LayoutParams(-2, -2))
             addView(truckBar, LinearLayout.LayoutParams(-1, -2))
         }
         root = FrameLayout(this).apply {
@@ -176,6 +184,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             add(Manifest.permission.RECORD_AUDIO)
             add(android.car.Car.PERMISSION_SPEED)   // truck speed and battery, shown here and passed to Android Auto
             add(android.car.Car.PERMISSION_ENERGY)
+            add(Manifest.permission.ACCESS_FINE_LOCATION)  // the truck's GPS, passed to Android Auto
             if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.BLUETOOTH_CONNECT)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
         }.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }

@@ -17,6 +17,9 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.media.AudioManager
 import android.os.Handler
 import android.os.Looper
@@ -68,6 +71,7 @@ class BridgeService : Service() {
     private var lastAutoLog = 0L
     /** Started at boot and the screen not opened since: bring the screen up when the phone connects. */
     @Volatile private var openScreenOnConnect = false
+    private var watchingGps = false
     @Volatile private var running = true
     private val searching = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -94,7 +98,33 @@ class BridgeService : Service() {
         var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
             types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        if (gpsAllowed()) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
         runCatching { startForeground(1, notification(), types) }.onFailure { Log.w(TAG, "foreground upgrade refused", it) }
+        watchGps()
+    }
+
+    private fun gpsAllowed() = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+    /** The truck's own GPS, passed to Android Auto so Maps doesn't depend on a phone in a pocket. */
+    @SuppressLint("MissingPermission")  // checked by gpsAllowed()
+    private fun watchGps() {
+        if (watchingGps || !gpsAllowed()) return
+        val lm = getSystemService(LocationManager::class.java)
+        if (!lm.allProviders.contains(LocationManager.GPS_PROVIDER)) { Log.w(TAG, "no GPS provider on this car"); return }
+        watchingGps = true
+        lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, LocationListener { l -> sendLocation(l) }, Looper.getMainLooper())
+        Log.i(TAG, "truck GPS: watching")
+    }
+
+    private fun sendLocation(l: Location) {
+        val h = handle.takeIf { it != 0L } ?: return
+        Native.location(h, intArrayOf(
+            (l.latitude * 1e7).toInt(), (l.longitude * 1e7).toInt(),
+            if (l.hasAccuracy()) (l.accuracy * 1000).toInt() else -1,
+            if (l.hasAltitude()) (l.altitude * 100).toInt() else Int.MIN_VALUE,
+            if (l.hasSpeed()) (l.speed * 1000).toInt() else -1,
+            if (l.hasBearing()) (l.bearing * 1e6).toInt() else -1,
+        ))
     }
 
     override fun onDestroy() {
@@ -190,15 +220,17 @@ class BridgeService : Service() {
 
     private fun startSession(fd: Int) {
         endSession()
-        val v = Display.config(this)
+        val plan = Display.config(this)
+        val v = plan.main
         video = v
-        decoder = VideoDecoder(v.codecW, v.codecH) {
+        decoder = VideoDecoder(plan.mime, v.codecW, v.codecH) {
             // Re-sending video focus makes the phone send a fresh key frame.
             handle.takeIf { it != 0L }?.let { h -> Native.videoFocus(h, true) }
         }.also { d -> surface?.let { d.attach(it) } }
         audio.holdFocus()
         NowPlaying.connected(this)
-        handle = Native.start(fd, v.toArray(), truck.toArray(), Callbacks(++sessionId))
+        handle = Native.start(fd, plan.toArray(), truck.toArray(), gpsAllowed(), Callbacks(++sessionId, plan))
+        Log.i(TAG, "video offered: ${if (plan.hevc) "H.265" else "H.264"} " + plan.configs.joinToString { "${it.codecW}x${it.codecH}" })
         pushSensors()
         say("Android Auto connected")
         // Started at boot, nobody has opened the screen yet: try to bring it up for the video.
@@ -243,7 +275,8 @@ class BridgeService : Service() {
             val header = listOf(
                 "Reason: $reason",
                 "Hotspot: ${s.ssid} / ${s.bssid}, car ${carIp()}, phone $ip",  // never the password
-                "Video: ${video?.let { "${it.codecW}x${it.codecH}" } ?: "not connected"}",
+                "Video: ${video?.let { "${it.codecW}x${it.codecH}" } ?: "not connected"}, H.265 ${if (s.hevcFailed) "failed in this version" else "allowed"}",
+                "GPS: ${if (gpsAllowed()) "allowed" else "not allowed"}, voice button: ${VoiceAssistant.status(this)}",
                 "Truck: ${truckText ?: "nothing shared"}",
                 "Route: ${ClusterNav.route}, cluster ${if (ClusterNav.sink != null) "bound" else "not bound"}",
                 "Screen: " + synchronized(this) { recent.joinToString(" | ") },
@@ -262,7 +295,7 @@ class BridgeService : Service() {
     }
 
     /** Session events, on the native session thread. [id] tells a stale session's late events apart. */
-    private inner class Callbacks(val id: Int) : Native.Listener {
+    private inner class Callbacks(val id: Int, val plan: VideoPlan) : Native.Listener {
         private var firstFrame = true
         override fun onVideo(data: ByteArray, timestampUs: Long) {
             decoder?.frame(data, timestampUs)
@@ -281,7 +314,14 @@ class BridgeService : Service() {
                 if (id == sessionId) {
                     endSession()
                     say("Disconnected: $reason")
-                    if (reason != "phone disconnected") sendLogs("auto", auto = true)
+                    if (reason != "phone disconnected") {
+                        // H.265 never produced a picture: use the proven 1080p H.264 from the next connection on.
+                        if (plan.hevc && firstFrame) {
+                            Settings(this@BridgeService).hevcFailed = true
+                            say("Sharper picture (H.265) didn't start; using 1080p next time")
+                        }
+                        sendLogs("auto", auto = true)
+                    }
                 }
             }
         }
@@ -370,6 +410,11 @@ class Settings(context: Context) {
     var bssid: String get() = p.getString("bssid", "")!!; set(v) = p.edit().putString("bssid", v.trim()).apply()
     var viewW: Int get() = p.getInt("viewW", 0); set(v) = p.edit().putInt("viewW", v).apply()
     var viewH: Int get() = p.getInt("viewH", 0); set(v) = p.edit().putInt("viewH", v).apply()
+    /** H.265 failed to start in this app version; each update tries it again. */
+    var hevcFailed: Boolean
+        get() = p.getLong("hevcFailedIn", -1) == version
+        set(v) = p.edit().putLong("hevcFailedIn", if (v) version else -1).apply()
+    private val version = context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
 
     fun wifi() = if (ssid.isEmpty() || password.isEmpty() || bssid.isEmpty()) null else Wireless.Wifi(ssid, password, bssid)
 }

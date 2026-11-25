@@ -22,7 +22,8 @@ import java.util.concurrent.LinkedBlockingQueue
  * corrupts every frame after it. If decoding falls far behind, it skips to the next key frame instead
  * and asks the phone for one ([onNeedKeyFrame]).
  */
-class VideoDecoder(private val width: Int, private val height: Int, private val onNeedKeyFrame: () -> Unit) {
+class VideoDecoder(private val mime: String, private val width: Int, private val height: Int, private val onNeedKeyFrame: () -> Unit) {
+    private val hevc = mime == MediaFormat.MIMETYPE_VIDEO_HEVC
     private class Frame(val data: ByteArray, val timestampUs: Long, val config: Boolean)
 
     private val thread = HandlerThread("ab-video").apply { start() }
@@ -36,7 +37,7 @@ class VideoDecoder(private val width: Int, private val height: Int, private val 
 
     fun attach(surface: Surface) = handler.post {
         closeCodec()
-        codec = MediaCodec.createDecoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).apply {
+        codec = MediaCodec.createDecoderByType(mime).apply {
             setCallback(object : MediaCodec.Callback() {
                 override fun onInputBufferAvailable(c: MediaCodec, index: Int) { if (c === codec) { freeInputs.addLast(index); feed() } }
                 override fun onOutputBufferAvailable(c: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
@@ -45,7 +46,7 @@ class VideoDecoder(private val width: Int, private val height: Int, private val 
                 override fun onError(c: MediaCodec, e: MediaCodec.CodecException) { Log.w(TAG, "decoder error", e) }
                 override fun onOutputFormatChanged(c: MediaCodec, format: MediaFormat) {}
             }, handler)
-            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height)
+            val format = MediaFormat.createVideoFormat(mime, width, height)
             format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
             configure(format, surface, null, 0)
             start()
@@ -61,10 +62,10 @@ class VideoDecoder(private val width: Int, private val height: Int, private val 
 
     /** Called on the connection thread; only hands the frame over. */
     fun frame(data: ByteArray, timestampUs: Long) = handler.post {
-        val isConfig = isConfig(data)
+        val isConfig = isConfig(data, hevc)
         if (isConfig) config = data
         if (codec == null) return@post
-        val key = hasKeyFrame(data)
+        val key = hasKeyFrame(data, hevc)
         if (waitForKeyFrame) {
             if (!isConfig && !key) return@post  // a P-frame without its reference would smear
             if (key) waitForKeyFrame = false
@@ -104,21 +105,24 @@ class VideoDecoder(private val width: Int, private val height: Int, private val 
     companion object {
         private const val MAX_BACKLOG = 30
 
-        /** NAL unit types in an Annex-B buffer (00 00 01 / 00 00 00 01 start codes). */
-        fun nalTypes(d: ByteArray): List<Int> {
+        /** NAL unit types in an Annex-B buffer (00 00 01 / 00 00 00 01 start codes). H.265 keeps the type in bits 1-6. */
+        fun nalTypes(d: ByteArray, hevc: Boolean = false): List<Int> {
             val types = mutableListOf<Int>()
             var i = 0
             while (i + 3 < d.size) {
                 if (d[i].toInt() == 0 && d[i + 1].toInt() == 0 && d[i + 2].toInt() == 1) {
-                    types += d[i + 3].toInt() and 0x1f
+                    val b = d[i + 3].toInt()
+                    types += if (hevc) (b shr 1) and 0x3f else b and 0x1f
                     i += 3
                 } else i++
             }
             return types
         }
 
-        fun isConfig(d: ByteArray) = nalTypes(d).firstOrNull() == 7  // starts with SPS
-        fun hasKeyFrame(d: ByteArray) = 5 in nalTypes(d)            // contains an IDR slice
+        /** Starts with the stream's setup: SPS in H.264, VPS in H.265. */
+        fun isConfig(d: ByteArray, hevc: Boolean = false) = nalTypes(d, hevc).firstOrNull() == (if (hevc) 32 else 7)
+        /** Contains a frame that needs no earlier one: IDR in H.264, any IRAP (16-21) in H.265. */
+        fun hasKeyFrame(d: ByteArray, hevc: Boolean = false) = nalTypes(d, hevc).any { if (hevc) it in 16..21 else it == 5 }
     }
 }
 

@@ -1,6 +1,8 @@
 package dev.autobridge
 
 import android.content.Context
+import android.media.MediaCodecList
+import android.media.MediaFormat
 import android.view.WindowManager
 import kotlin.math.roundToInt
 
@@ -21,7 +23,36 @@ data class VideoConfig(val resolution: Int, val codecW: Int, val codecH: Int, va
         Pair((x * contentW / viewW).roundToInt(), (y * contentH / viewH).roundToInt())
 }
 
+/**
+ * What we offer the phone: one codec and the sizes in that codec, best first. The phone uses the
+ * first one it can send. [codec] is Android Auto's MediaCodecType: 3 H.264, 7 H.265.
+ */
+data class VideoPlan(val codec: Int, val configs: List<VideoConfig>) {
+    val hevc get() = codec == H265
+    /** Touch and cropping use the first size; every size has the same shape, so the others match. */
+    val main get() = configs.first()
+    val mime: String get() = if (hevc) MediaFormat.MIMETYPE_VIDEO_HEVC else MediaFormat.MIMETYPE_VIDEO_AVC
+    fun toArray() = intArrayOf(codec, configs.size) + configs.flatMap { it.toArray().toList() }  // read by bridge.cpp
+
+    companion object { const val H264 = 3; const val H265 = 7 }
+}
+
 object Display {
+    /**
+     * Sharper picture: Android Auto only sends 1440p in H.265 (H.264 stops at 1080p, which is why
+     * 0.2.2's 1440p failed). Offered when the screen is wider than 1080p, the car can decode it,
+     * and H.265 hasn't already failed in this app version; otherwise the proven single 1080p plan.
+     */
+    fun plan(viewW: Int, viewH: Int, densityDpi: Int, hevcAllowed: Boolean, canDecodeHevc: (Int, Int) -> Boolean): VideoPlan {
+        val single = pick(viewW, viewH, densityDpi)
+        val portrait = viewH > viewW
+        val big = if (portrait) Triple(8, 1440, 2560) else Triple(4, 2560, 1440)
+        if (!hevcAllowed || maxOf(viewW, viewH) <= 2016 || !canDecodeHevc(big.second, big.third)) return VideoPlan(VideoPlan.H264, listOf(single))
+        val tiers = if (portrait) listOf(big, Triple(7, 1080, 1920), Triple(6, 720, 1280))
+                    else listOf(big, Triple(3, 1920, 1080), Triple(2, 1280, 720))
+        return VideoPlan(VideoPlan.H265, tiers.map { (res, w, h) -> sized(res, w, h, viewW, viewH, densityDpi) })
+    }
+
     fun pick(viewW: Int, viewH: Int, densityDpi: Int): VideoConfig {
         val portrait = viewH > viewW
         val long = maxOf(viewW, viewH)
@@ -33,19 +64,26 @@ object Display {
             long >= 1100 -> Triple(2, 1280, 720)
             else -> Triple(1, 800, 480)
         }
+        return sized(res, w, h, viewW, viewH, densityDpi)
+    }
+
+    /** Margins so the phone draws in the screen's shape; density keeps the phone's UI the same size at every tier. */
+    private fun sized(res: Int, w: Int, h: Int, viewW: Int, viewH: Int, densityDpi: Int): VideoConfig {
         val screen = viewW.toDouble() / viewH
         val (mw, mh) = if (screen > w.toDouble() / h) 0 to (h - w / screen).roundToInt()
                        else (w - h * screen).roundToInt() to 0
-        val dpi = (densityDpi.toDouble() * (w - mw) / viewW).roundToInt().coerceIn(100, 400)
+        val dpi = (densityDpi.toDouble() * (w - mw) / viewW).roundToInt().coerceIn(100, 600)
         return VideoConfig(res, w, h, mw, mh, dpi)
     }
 
     /** Uses the projection view size the screen last reported, else the whole display. */
-    fun config(context: Context): VideoConfig {
+    fun config(context: Context): VideoPlan {
         val s = Settings(context)
         val bounds = context.getSystemService(WindowManager::class.java).maximumWindowMetrics.bounds
         val w = s.viewW.takeIf { it > 0 } ?: bounds.width()
         val h = s.viewH.takeIf { it > 0 } ?: bounds.height()
-        return pick(w, h, context.resources.displayMetrics.densityDpi)
+        val hevc = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { !it.isEncoder }
+            .mapNotNull { runCatching { it.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_HEVC).videoCapabilities }.getOrNull() }
+        return plan(w, h, context.resources.displayMetrics.densityDpi, !s.hevcFailed) { cw, ch -> hevc.any { it.isSizeSupported(cw, ch) } }
     }
 }

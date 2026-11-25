@@ -51,10 +51,16 @@ using aasdk::messenger::ChannelId;
 
 static JavaVM *gVm;
 
-struct Config {
+struct Tier {
     int resolution;      // VideoCodecResolutionType
     int codecW, codecH;  // pixel size of that resolution
     int marginW, marginH, dpi;
+};
+// VideoPlan.toArray(): codec (MediaCodecType: 3 H.264, 7 H.265) and the sizes, best first.
+struct Config {
+    int codec;
+    std::vector<Tier> tiers;
+    const Tier &main() const { return tiers.front(); }  // all tiers share one shape; touch uses this one
 };
 
 class Session;
@@ -173,6 +179,7 @@ public:
     // Truck.toArray(): speed mm/s, gear, parking brake, battery %, range m. INT_MIN = unknown.
     int truck[5] = {INT_MIN, INT_MIN, INT_MIN, INT_MIN, INT_MIN};
     bool offered[5] = {};  // which of those Android Auto was told this car has
+    bool offeredGps = false;  // the truck's GPS, when AutoBridge may read it
     bool moving = false, night = false, micOpen = false, sensorsReady = false, videoReady = false, inputReady = false;
 
     void end(const std::string &why) {
@@ -245,21 +252,25 @@ struct Video : Base, aasdk::channel::mediasink::video::IVideoMediaSinkServiceEve
         auto *svc = r.add_channels();
         svc->set_id((int) ch->getId());
         auto *sink = svc->mutable_media_sink_service();
-        sink->set_available_type(media::shared::message::MEDIA_CODEC_VIDEO_H264_BP);
+        auto codec = (media::shared::message::MediaCodecType) s.cfg.codec;
+        sink->set_available_type(codec);
         sink->set_available_while_in_call(true);
-        auto *v = sink->add_video_configs();
-        v->set_codec_resolution((media::sink::message::VideoCodecResolutionType) s.cfg.resolution);
-        v->set_frame_rate(media::sink::message::VIDEO_FPS_60);
-        v->set_width_margin(s.cfg.marginW);
-        v->set_height_margin(s.cfg.marginH);
-        v->set_density(s.cfg.dpi);
+        for (auto &t : s.cfg.tiers) {  // one codec family only: the phone takes the first size it can send
+            auto *v = sink->add_video_configs();
+            v->set_codec_resolution((media::sink::message::VideoCodecResolutionType) t.resolution);
+            v->set_frame_rate(media::sink::message::VIDEO_FPS_60);
+            v->set_width_margin(t.marginW);
+            v->set_height_margin(t.marginH);
+            v->set_density(t.dpi);
+            v->set_video_codec_type(codec);
+        }
     }
     void onChannelOpenRequest(const ctl::ChannelOpenRequest &) override { openResponse(s, ch); ch->receive(shared_from_this()); }
     void onMediaChannelSetupRequest(const media::shared::message::Setup &) override {
         media::shared::message::Config c;
         c.set_status(media::shared::message::Config::STATUS_READY);
         c.set_max_unacked(4);
-        c.add_configuration_indices(0);
+        for (int i = 0; i < (int) s.cfg.tiers.size(); i++) c.add_configuration_indices(i);
         auto p = SendPromise::defer(s.strand);
         p->then([this] { s.videoReady = true; s.sendVideoFocus(true, true); }, [this](const Error &e) { fail(e); });
         ch->sendChannelSetupResponse(c, std::move(p));
@@ -387,10 +398,11 @@ struct Input : Base, aasdk::channel::inputsource::IInputSourceServiceEventHandle
         // The touch panel is the visible area (video frame minus the cropped margins);
         // Android Auto maps touches onto its UI area, not the whole frame.
         // Steering-wheel media keys, passed on from the truck's media buttons (NowPlaying.kt).
-        for (int k : {85, 87, 88, 126, 127}) svc->mutable_input_source_service()->add_keycodes_supported(k);
+        // 84 (search) is Android Auto's voice key: the steering-wheel voice button (VoiceAssistant.kt).
+        for (int k : {84, 85, 87, 88, 126, 127}) svc->mutable_input_source_service()->add_keycodes_supported(k);
         auto *t = svc->mutable_input_source_service()->add_touchscreen();
-        t->set_width(s.cfg.codecW - s.cfg.marginW);
-        t->set_height(s.cfg.codecH - s.cfg.marginH);
+        t->set_width(s.cfg.main().codecW - s.cfg.main().marginW);
+        t->set_height(s.cfg.main().codecH - s.cfg.main().marginH);
     }
     void onChannelOpenRequest(const ctl::ChannelOpenRequest &) override {
         openResponse(s, ch);
@@ -539,6 +551,7 @@ struct Sensors : Base, aasdk::channel::sensorsource::ISensorSourceServiceEventHa
         src->add_supported_ev_connector_types(sensor::EV_CONNECTOR_TYPE_J1772);
         src->add_supported_ev_connector_types(sensor::EV_CONNECTOR_TYPE_COMBO_1);
         src->add_supported_ev_connector_types(sensor::EV_CONNECTOR_TYPE_TESLA_SUPERCHARGER);
+        if (s.offeredGps) src->add_sensors()->set_sensor_type(sensor::SENSOR_LOCATION);
         if (s.offered[0]) src->add_sensors()->set_sensor_type(sensor::SENSOR_SPEED);
         if (s.offered[1]) src->add_sensors()->set_sensor_type(sensor::SENSOR_GEAR);
         if (s.offered[2]) src->add_sensors()->set_sensor_type(sensor::SENSOR_PARKING_BRAKE);
@@ -632,9 +645,10 @@ struct Control : Base, aasdk::channel::control::IControlServiceChannelEventHandl
     void onChannelError(const Error &e) override { fail(e); }
 };
 
-static Session *start(JNIEnv *env, int fd, const Config &cfg, const jint *truck, jobject listener) {
+static Session *start(JNIEnv *env, int fd, const Config &cfg, const jint *truck, bool gps, jobject listener) {
     auto *s = new Session();
     s->cfg = cfg;
+    s->offeredGps = gps;
     s->listener.bind(env, listener);
     for (int i = 0; i < 5; i++) { s->truck[i] = truck[i]; s->offered[i] = truck[i] != INT_MIN; }
 
@@ -714,12 +728,37 @@ extern "C" {
 
 JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *) { gVm = vm; return JNI_VERSION_1_6; }
 
-// cfg = [resolution, codecW, codecH, marginW, marginH, dpi]
-JNIEXPORT jlong JNICALL Java_dev_autobridge_Native_start(JNIEnv *env, jobject, jint fd, jintArray cfgArr, jintArray truckArr, jobject listener) {
-    jint c[6], t[5];
-    env->GetIntArrayRegion(cfgArr, 0, 6, c);
+// cfg = VideoPlan.toArray(): [codec, n, then n x (resolution, codecW, codecH, marginW, marginH, dpi)]
+JNIEXPORT jlong JNICALL Java_dev_autobridge_Native_start(JNIEnv *env, jobject, jint fd, jintArray cfgArr, jintArray truckArr,
+                                                         jboolean gps, jobject listener) {
+    std::vector<jint> c(env->GetArrayLength(cfgArr));
+    env->GetIntArrayRegion(cfgArr, 0, (jsize) c.size(), c.data());
+    Config cfg{c[0], {}};
+    for (int i = 0; i < c[1]; i++) {
+        const jint *x = &c[2 + i * 6];
+        cfg.tiers.push_back(Tier{x[0], x[1], x[2], x[3], x[4], x[5]});
+    }
+    jint t[5];
     env->GetIntArrayRegion(truckArr, 0, 5, t);
-    return (jlong) start(env, fd, Config{c[0], c[1], c[2], c[3], c[4], c[5]}, t, listener);
+    return (jlong) start(env, fd, cfg, t, gps, listener);
+}
+
+JNIEXPORT void JNICALL Java_dev_autobridge_Native_location(JNIEnv *env, jobject, jlong h, jintArray fix) {
+    auto *s = (Session *) h;
+    std::array<jint, 6> f;  // lat e7, lon e7, accuracy e3 (m), altitude e2 (m), speed e3 (m/s), bearing e6 (deg)
+    env->GetIntArrayRegion(fix, 0, 6, f.data());
+    s->strand.dispatch([s, f] {
+        if (!s->sensorsReady || !s->offeredGps) return;
+        sensor::SensorBatch batch;
+        auto *l = batch.add_location_data();
+        l->set_latitude_e7(f[0]);
+        l->set_longitude_e7(f[1]);
+        if (f[2] >= 0) l->set_accuracy_e3(f[2]);
+        if (f[3] != INT_MIN) l->set_altitude_e2(f[3]);
+        if (f[4] >= 0) l->set_speed_e3(f[4]);
+        if (f[5] >= 0) l->set_bearing_e6(f[5]);
+        s->sensorChannel->sendSensorEventIndication(batch, ::promise(*s, "gps"));
+    });
 }
 
 JNIEXPORT void JNICALL Java_dev_autobridge_Native_stop(JNIEnv *, jobject, jlong h) { stop((Session *) h); }

@@ -20,6 +20,17 @@
     <uses-permission android:name="android.car.permission.CAR_POWERTRAIN" />
     <uses-permission android:name="android.car.permission.CAR_INFO" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- The truck's GPS, passed to Android Auto. -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
+
+    <!-- Finds the car's assistant picker (Voice button). -->
+    <queries>
+        <intent><action android:name="android.settings.VOICE_INPUT_SETTINGS" /></intent>
+        <intent><action android:name="android.settings.MANAGE_DEFAULT_APPS_SETTINGS" /></intent>
+    </queries>
     <!-- Cluster turn-by-turn (ClusterNav): NavigationManager, and bringing AutoBridge back after the bootstrap flash. -->
     <uses-permission android:name="androidx.car.app.NAVIGATION_TEMPLATES" />
     <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />
@@ -65,6 +76,24 @@
         </service>
         <meta-data android:name="com.android.automotive" android:resource="@xml/automotive_app_desc" />
 
+        <!-- Steering-wheel voice button -> Android Auto's Assistant, once the driver picks AutoBridge
+             as the Digital assistant (VoiceAssistant.kt). Inert until then. -->
+        <service
+            android:name=".VoiceService"
+            android:exported="true"
+            android:label="AutoBridge (Android Auto Assistant)"
+            android:permission="android.permission.BIND_VOICE_INTERACTION">
+            <intent-filter><action android:name="android.service.voice.VoiceInteractionService" /></intent-filter>
+            <meta-data android:name="android.voice_interaction" android:resource="@xml/voice_assistant" />
+        </service>
+        <service
+            android:name=".VoiceSessionService"
+            android:exported="true"
+            android:permission="android.permission.BIND_VOICE_INTERACTION" />
+        <service android:name=".VoiceRecognitionService" android:exported="true" android:label="AutoBridge">
+            <intent-filter><action android:name="android.speech.RecognitionService" /></intent-filter>
+        </service>
+
         <!-- Cluster turn-by-turn (ClusterNav). The Templates Host binds the service only after this
              activity has opened once; it lives in its own hidden task. -->
         <activity
@@ -89,6 +118,6 @@
         <service
             android:name=".BridgeService"
             android:exported="false"
-            android:foregroundServiceType="connectedDevice|mediaPlayback|microphone" />
+            android:foregroundServiceType="connectedDevice|mediaPlayback|microphone|location" />
     </application>
 </manifest>

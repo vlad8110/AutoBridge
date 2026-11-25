@@ -20,9 +20,12 @@ object Native {
         fun onNavDistance(meters: Int, e3: Int, unit: Int, sec: Int, destMeters: Int, destE3: Int, destUnit: Int, destSec: Int, currentRoad: String?)
     }
 
-    /** Takes ownership of [fd], a connected TCP socket. cfg = [resolution, codecW, codecH, marginW, marginH, dpi].
-     * truck = [Truck.toArray]; what is known at start is what Android Auto is told the car has. */
-    external fun start(fd: Int, cfg: IntArray, truck: IntArray, listener: Listener): Long
+    /** Takes ownership of [fd], a connected TCP socket. cfg = [VideoPlan.toArray].
+     * truck = [Truck.toArray]; what is known at start is what Android Auto is told the car has.
+     * gps = the truck's location will follow through [location]. */
+    external fun start(fd: Int, cfg: IntArray, truck: IntArray, gps: Boolean, listener: Listener): Long
+    /** fix = [lat e7, lon e7, accuracy e3 m (-1 unknown), altitude e2 m (Int.MIN_VALUE unknown), speed e3 m/s (-1), bearing e6 deg (-1)] */
+    external fun location(handle: Long, fix: IntArray)
     external fun stop(handle: Long)
     external fun touch(handle: Long, action: Int, actionIndex: Int, ids: IntArray, xs: IntArray, ys: IntArray)
     external fun mic(handle: Long, pcm: ByteArray, length: Int)
