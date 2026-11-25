@@ -344,7 +344,8 @@ class BridgeService : Service() {
                 "Truck: ${truckText ?: "nothing shared"}",
                 "Route: ${ClusterNav.route}, cluster ${if (ClusterNav.sink != null) "bound" else "not bound"}",
                 "Status: " + synchronized(this) { recent.joinToString(" | ") },
-            )
+                "---- truck data (every value the truck lets AutoBridge read) ----",
+            ) + (runCatching { TruckProbe.dump(car!!.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager) }.getOrElse { listOf("no car service: $it") })
             try {
                 Logs.send(ip, carIp(), name, Logs.collect(this, reason, header))
                 say("Log saved on the phone: $name")

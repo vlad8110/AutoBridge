@@ -193,6 +193,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             add(Manifest.permission.RECORD_AUDIO)
             add(android.car.Car.PERMISSION_SPEED)   // truck speed and battery, shown here and passed to Android Auto
             add(android.car.Car.PERMISSION_ENERGY)
+            // Android 14 lets a driver grant these to ordinary apps: mileage, tire pressure, steering angle.
+            addAll(listOf("android.car.permission.CAR_MILEAGE_3P", "android.car.permission.CAR_TIRES_3P", "android.car.permission.READ_CAR_STEERING_3P"))
             add(Manifest.permission.ACCESS_FINE_LOCATION)  // the truck's GPS, passed to Android Auto
             if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.BLUETOOTH_CONNECT)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)

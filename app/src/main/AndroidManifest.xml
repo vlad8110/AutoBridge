@@ -19,6 +19,13 @@
     <uses-permission android:name="android.car.permission.CAR_ENERGY" />
     <uses-permission android:name="android.car.permission.CAR_POWERTRAIN" />
     <uses-permission android:name="android.car.permission.CAR_INFO" />
+    <!-- Read-only extras for the truck data list in the log (TruckProbe) and the bottom bar. -->
+    <uses-permission android:name="android.car.permission.CAR_EXTERIOR_ENVIRONMENT" />
+    <uses-permission android:name="android.car.permission.CAR_ENERGY_PORTS" />
+    <uses-permission android:name="android.car.permission.READ_CAR_DISPLAY_UNITS" />
+    <uses-permission android:name="android.car.permission.CAR_MILEAGE_3P" />
+    <uses-permission android:name="android.car.permission.CAR_TIRES_3P" />
+    <uses-permission android:name="android.car.permission.READ_CAR_STEERING_3P" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- The truck's GPS, passed to Android Auto. -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
