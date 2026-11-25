@@ -118,6 +118,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private fun applyBar() { truckBar.visibility = if (Settings(this).barEnabled) View.VISIBLE else View.GONE }
 
+    @Deprecated("Back gesture; this app has no AndroidX")
+    override fun onBackPressed() { if (!settingsPanel.close()) super.onBackPressed() }
+
     // ---- video surface ----
 
     override fun surfaceCreated(holder: SurfaceHolder) { BridgeService.setSurface(holder.surface) }

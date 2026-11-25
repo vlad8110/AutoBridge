@@ -32,7 +32,7 @@ class SettingsPanel(context: Context, private val editWifi: () -> Unit, private 
             addView(LinearLayout(context).apply {
                 gravity = Gravity.CENTER_VERTICAL
                 addView(text(26f, bold = true).apply { text = "AutoBridge settings" }, LinearLayout.LayoutParams(0, -2, 1f))
-                addView(button("Close") { visibility = GONE })
+                addView(button("Close") { close() })  // not bare `visibility`: inside apply{} that was the header row
             })
             section("Display")
             addView(card(
@@ -65,6 +65,9 @@ class SettingsPanel(context: Context, private val editWifi: () -> Unit, private 
     }
 
     fun open() { refresh(); visibility = VISIBLE }
+
+    /** True if the page was open (so Back closes it instead of leaving AutoBridge). */
+    fun close(): Boolean = (visibility == VISIBLE).also { visibility = GONE }
 
     private fun refresh() {
         hotspot.text = s.ssid.ifEmpty { "Not set" }
