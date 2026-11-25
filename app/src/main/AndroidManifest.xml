@@ -65,6 +65,14 @@
             <!-- Android Auto applies its own driving rules from the driving status we report. -->
             <meta-data android:name="distractionOptimized" android:value="true" />
         </activity>
+        <!-- Relaunches AutoBridge in a fresh process after a setting that changes Android Auto's shape. -->
+        <activity
+            android:name=".Restart"
+            android:exported="false"
+            android:process=":restart"
+            android:theme="@android:style/Theme.NoDisplay">
+            <meta-data android:name="distractionOptimized" android:value="true" />
+        </activity>
 
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>

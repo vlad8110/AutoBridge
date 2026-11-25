@@ -14,8 +14,10 @@ import android.widget.TextView
  * AutoBridge settings, shown over Android Auto when the owner taps the bar's port chip (or the
  * waiting screen's Settings button). Android Auto keeps running underneath.
  */
-class SettingsPanel(context: Context, private val editWifi: () -> Unit, private val toast: (String) -> Unit, private val onStatusBar: () -> Unit) : FrameLayout(context) {
+class SettingsPanel(context: Context, private val editWifi: () -> Unit, private val toast: (String) -> Unit, private val onShapeChanged: () -> Unit) : FrameLayout(context) {
     private val s = Settings(context)
+    /** Set when a switch changed Android Auto's shape; applied (with a restart if connected) on Close. */
+    private var shapeChanged = false
     private val hotspot = text(18f)
     private val hotspotDetail = text(13f, MUTED, mono = true)
     private val about = text(18f)
@@ -36,9 +38,9 @@ class SettingsPanel(context: Context, private val editWifi: () -> Unit, private 
             })
             section("Display")
             addView(card(
-                toggle("Truck bar", "Battery, range, speed and power under Android Auto. Applies next time the phone connects.", s.barEnabled) { s.barEnabled = it },
-                toggle("Truck status bar", "The truck's own bar at the top (time, phone, notifications). Off gives Android Auto that space (fits properly from the next connection); swipe down from the top to see it.", s.statusBarShown) { s.statusBarShown = it; onStatusBar() },
-                toggle("Sharper picture", "1440p (H.265); falls back to 1080p by itself. Applies next time the phone connects.", s.hevcEnabled) { s.hevcEnabled = it },
+                toggle("Truck bar", "Battery, range, speed and power under Android Auto. AutoBridge restarts to apply it when you close settings.", s.barEnabled) { s.barEnabled = it; shapeChanged = true },
+                toggle("Truck status bar", "The truck's own bar at the top (time, phone, notifications). Off gives Android Auto that space; swipe down from the top to see it. AutoBridge restarts to apply it when you close settings.", s.statusBarShown) { s.statusBarShown = it; shapeChanged = true },
+                toggle("Sharper picture", "1440p (H.265); falls back to 1080p by itself. AutoBridge restarts to apply it when you close settings.", s.hevcEnabled) { s.hevcEnabled = it; shapeChanged = true },
             ))
             section("Truck hotspot")
             addView(card(
@@ -67,7 +69,10 @@ class SettingsPanel(context: Context, private val editWifi: () -> Unit, private 
     fun open() { refresh(); visibility = VISIBLE }
 
     /** True if the page was open (so Back closes it instead of leaving AutoBridge). */
-    fun close(): Boolean = (visibility == VISIBLE).also { visibility = GONE }
+    fun close(): Boolean = (visibility == VISIBLE).also {
+        visibility = GONE
+        if (shapeChanged) { shapeChanged = false; onShapeChanged() }
+    }
 
     private fun refresh() {
         hotspot.text = s.ssid.ifEmpty { "Not set" }

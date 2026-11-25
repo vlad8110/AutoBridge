@@ -13,18 +13,25 @@ class BarTextTest {
         val b = BarText.of(charging, localeMiles = true)
         assertEquals("P", b.gear); assertEquals("Park", b.gearWord); assertEquals(false, b.gearActive)
         assertEquals("382", b.range); assertEquals("mi", b.rangeUnit); assertEquals("164 / 207 kWh", b.energy)
-        assertEquals("15", b.mid); assertEquals("min", b.midUnit); assertEquals("to 80%", b.midLabel)
-        assertEquals("8", b.power); assertEquals("80 A max", b.meterRight); assertEquals("Limit 80%", b.caption)
+        assertEquals("—", b.mid); assertEquals("Speed", b.midLabel)  // speed stays in the middle while charging
+        assertEquals("15 min", b.timeLeft); assertEquals("to 80%", b.timeLabel)  // the time left sits next to the kW
+        assertEquals("8", b.power); assertEquals("Limit 80%", b.meterRight); assertEquals("80 A max", b.caption)
         assertEquals(0.8f, b.meterMark, 1e-6f)
         assertEquals(BarText.Port.PLUGGED, b.port)
-        assertEquals("79", b.percent); assertEquals("Charging", b.batteryLabel)
+        assertEquals("79", b.percent); assertEquals("Charging", b.batteryLabel); assertEquals(false, b.brakeOn)
+    }
+
+    @Test fun timeLeftCountsDown() {
+        assertEquals("1 h 45 min", BarText.duration(6300)); assertEquals("1 h", BarText.duration(3600))
+        assertEquals("15 min", BarText.duration(900)); assertEquals("1 min", BarText.duration(1)); assertEquals("2 h 1 min", BarText.duration(7201))
+        assertEquals("", BarText.of(charging.copy(chargeState = 3, portConnected = false), true).timeLeft)  // only while charging
     }
 
     @Test fun drivingShowsSpeedAndASignedMeter() {
         val t = charging.copy(gear = 0x8, chargeState = 3, portConnected = false, portOpen = false, rateMw = -24_000_000f, speedMs = 20.1f)
         val b = BarText.of(t, localeMiles = true)
         assertEquals("D", b.gear); assertEquals("Drive", b.gearWord); assertEquals(true, b.gearActive)
-        assertEquals("45", b.mid); assertEquals("mph", b.midUnit)
+        assertEquals("45", b.mid); assertEquals("mph", b.midUnit); assertEquals("", b.timeLeft)
         assertEquals("−24", b.power); assertEquals(BarText.Tone.GOOD, b.powerTone)  // regen
         assertEquals(0.5f - kotlin.math.sqrt(24f / 200f) / 2, b.meterFrom, 1e-5f); assertEquals(0.5f, b.meterTo, 1e-6f)  // square-root scale, left of centre
         assertEquals("Partial regen", b.caption)

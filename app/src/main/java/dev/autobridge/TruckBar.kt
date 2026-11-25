@@ -5,7 +5,6 @@ import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
-import android.graphics.drawable.GradientDrawable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.AbsoluteSizeSpan
@@ -26,12 +25,13 @@ object BarText {
     data class Bar(
         val gear: String, val gearWord: String, val gearActive: Boolean,
         val range: String, val rangeUnit: String, val energy: String,
-        val mid: String, val midUnit: String, val midLabel: String,          // speed, or time to the charge limit
+        val mid: String, val midUnit: String, val midLabel: String,          // speed
+        val timeLeft: String, val timeLabel: String,                         // while charging: "1 h 45 min", "to 80%"
         val charging: Boolean,
         val meterLeft: String, val meterCenter: String, val meterRight: String,
         val meterFrom: Float, val meterTo: Float, val meterMark: Float,      // 0..1 across the meter
         val meterTone: Tone, val power: String, val powerTone: Tone, val caption: String,
-        val brake: String, val port: Port,
+        val brakeOn: Boolean, val port: Port,
         val percent: String, val fill: Float, val batteryLabel: String,
     )
 
@@ -51,10 +51,11 @@ object BarText {
             range = t.rangeM?.let { "${(if (miles) it / 1609.344f else it / 1000).roundToInt()}" } ?: NONE,
             rangeUnit = if (miles) "mi" else "km",
             energy = t.batteryWh?.let { "${(it / 1000).roundToInt()}" + (t.capacityWh?.let { c -> " / ${(c / 1000).roundToInt()}" } ?: "") + " kWh" } ?: "",
-            mid = NONE, midUnit = "", midLabel = "", charging = t.charging,
+            mid = t.speedMs?.let { "${(it * if (miles) 2.23694f else 3.6f).roundToInt()}" } ?: NONE,
+            midUnit = if (miles) "mph" else "km/h", midLabel = "Speed", timeLeft = "", timeLabel = "", charging = t.charging,
             meterLeft = "", meterCenter = "", meterRight = "", meterFrom = 0f, meterTo = 0f, meterMark = -1f,
             meterTone = Tone.GOOD, power = NONE, powerTone = Tone.NORMAL, caption = "",
-            brake = when (t.parkingBrake) { true -> "On"; false -> "Off"; null -> NONE },
+            brakeOn = t.parkingBrake == true,
             port = when {
                 t.portConnected == true -> Port.PLUGGED; t.portOpen == true -> Port.OPEN
                 t.portOpen == false || t.portConnected == false -> Port.CLOSED; else -> Port.HIDDEN
@@ -62,21 +63,18 @@ object BarText {
             percent = pct?.toString() ?: NONE, fill = (pct ?: 0) / 100f, batteryLabel = if (t.charging) "Charging" else "Battery",
         )
         return if (t.charging) common.copy(
-            mid = t.chargeSec?.let { if (it < 3600) "${(it + 59) / 60}" else String.format(java.util.Locale.US, "%.1f", it / 3600f) } ?: NONE,
-            midUnit = t.chargeSec?.let { if (it < 3600) "min" else "h" } ?: "",
-            midLabel = t.chargeLimit?.let { "to ${it.roundToInt()}%" } ?: "Time left",
-            meterLeft = "Charging", meterRight = t.currentA?.let { "${it.roundToInt()} A max" } ?: "",
+            timeLeft = t.chargeSec?.let(::duration) ?: "",
+            timeLabel = t.chargeLimit?.let { "to ${it.roundToInt()}%" } ?: "left",
+            meterLeft = "Charging", meterRight = t.chargeLimit?.let { "Limit ${it.roundToInt()}%" } ?: "",
             meterFrom = 0f, meterTo = (pct ?: 0) / 100f, meterMark = t.chargeLimit?.let { it / 100f } ?: -1f,
             power = kw?.let { number(abs(it)) } ?: NONE, powerTone = Tone.GOOD,
-            caption = t.chargeLimit?.let { "Limit ${it.roundToInt()}%" } ?: "",
+            caption = t.currentA?.let { "${it.roundToInt()} A max" } ?: "",
         ) else {
             // Truck reports power positive when the battery is drained, negative when regen fills it.
             // Square-root scale: town driving (10-30 kW) fills a third of a side, hard pulls still fit.
             val k = kw ?: 0f
             val f = Math.signum(k) * kotlin.math.sqrt((abs(k) / METER_KW).coerceAtMost(1f)) / 2
             common.copy(
-                mid = t.speedMs?.let { "${(it * if (miles) 2.23694f else 3.6f).roundToInt()}" } ?: NONE,
-                midUnit = if (miles) "mph" else "km/h", midLabel = "Speed",
                 meterLeft = "Regen", meterCenter = "0", meterRight = "Power",
                 meterFrom = minOf(0.5f, 0.5f + f), meterTo = maxOf(0.5f, 0.5f + f), meterMark = 0.5f,
                 meterTone = if ((kw ?: 0f) < 0f) Tone.GOOD else Tone.BAD,
@@ -87,17 +85,24 @@ object BarText {
         }
     }
 
+    /** 900 -> "15 min", 6300 -> "1 h 45 min", 3600 -> "1 h" (minutes rounded up, so it never says 0 while charging). */
+    fun duration(sec: Int): String {
+        val min = (sec.coerceAtLeast(0) + 59) / 60
+        return when { min < 60 -> "$min min"; min % 60 == 0 -> "${min / 60} h"; else -> "${min / 60} h ${min % 60} min" }
+    }
+
     /** 8 -> "8", 7.36 -> "7.4", 62.4 -> "62" (whole kW once it's 10 or more). */
     fun number(kw: Float): String = if (kw >= 10) "${kw.roundToInt()}" else String.format(java.util.Locale.US, "%.1f", kw).removeSuffix(".0")
 }
 
 /**
- * The truck bar under Android Auto, laid out like a dashboard strip: gear, range, speed, a
- * regen-to-power meter, brake, charge port and a cell battery gauge, on dark smoky glass.
+ * The truck bar under Android Auto, laid out like a dashboard strip on black: a gear icon (with the
+ * parking brake as red brackets), range, speed, a regen-to-power meter, the charge door (also the
+ * hidden door to settings) and the battery ring with the truck.
  */
 class TruckBar(context: Context) : FrameLayout(context) {
     private val barH = (resources.displayMetrics.heightPixels * 0.14f).roundToInt() - 10
-    /** The port chip is also the hidden door to AutoBridge settings. */
+    /** The charge door icon is also the hidden door to AutoBridge settings. */
     var onSettings: (() -> Unit)? = null
     private lateinit var card: LinearLayout
     private val big = barH * 0.25f
@@ -105,9 +110,7 @@ class TruckBar(context: Context) : FrameLayout(context) {
     private val small = barH * 0.085f
     private val pad = (barH * 0.08f).roundToInt()
 
-    private val gearLetter = text(big * 1.15f, WHITE, true)
-    private val gearWord = text(small, MUTED)
-    private val gearChip = chip(gearLetter, gearWord)
+    private val gearIcon = GearIcon(context)
     private val range = text(big, WHITE, true)
     private val energy = text(small, MUTED)
     private val mid = text(big, WHITE, true)
@@ -118,26 +121,18 @@ class TruckBar(context: Context) : FrameLayout(context) {
     private val meter = Meter(context)
     private val power = text(big * 0.85f, WHITE, true)
     private val caption = text(small * 1.1f, MUTED)
-    private val brake = text(big * 0.85f, WHITE, true)
-    private val plugLabel = text(small, RED)
-    private val plug = Plug(context)
-    private val plugChip = chip(plug, plugLabel)
-    private val alert = text(small, WHITE, true).apply { text = "!"; gravity = Gravity.CENTER
-        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFFD93025.toInt()) } }
-    private val battery = Cells(context)
-    private val percent = text(big * 0.8f, WHITE, true)
-    private val batteryLabel = text(small * 1.1f, MUTED)
+    private val portIcon = PortIcon(context)
+    private val batteryIcon = BatteryIcon(context)
 
     init {
-        setBackgroundColor(0xFF000000.toInt())  // pure black around the card; the card keeps its own color
-        val chipSize = (barH * 0.62f).roundToInt()
-        val portSize = (chipSize * 0.88f).roundToInt()
+        setBackgroundColor(BLACK)
+        val icon = (barH * 0.7f).roundToInt()
         val row = LinearLayout(context).apply {
             card = this
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(pad * 2, pad, pad * 2, pad)
-            background = Chamfer(CARD, OUTLINE, barH * 0.13f)
-            addView(gearChip, LinearLayout.LayoutParams(chipSize, chipSize))
+            setPadding(pad * 2, pad / 2, pad * 2, pad / 2)
+            background = Chamfer(BLACK, OUTLINE, barH * 0.13f)
+            addView(gearIcon, LinearLayout.LayoutParams(icon, icon))
             gap()
             addView(column(Gravity.START, range, text(small * 1.1f, MUTED).apply { text = "Range" }, energy))
             gap()
@@ -147,22 +142,16 @@ class TruckBar(context: Context) : FrameLayout(context) {
                 orientation = LinearLayout.VERTICAL
                 addView(spread(meterLeft, meterCenter, meterRight))
                 addView(meter, LinearLayout.LayoutParams(-1, (barH * 0.12f).roundToInt()).apply { setMargins(0, pad / 2, 0, pad / 2) })
-                addView(spread(power, View(context), caption))
+                addView(LinearLayout(context).apply {  // power (and time left) gets the room, the caption only what it needs
+                    gravity = Gravity.BOTTOM
+                    addView(power, LinearLayout.LayoutParams(0, -2, 1f))
+                    addView(caption, LinearLayout.LayoutParams(-2, -2))
+                })
             }, LinearLayout.LayoutParams(0, -2, 1f))
             gap()
-            addView(column(Gravity.CENTER, brake, text(small * 1.1f, MUTED).apply { text = "Brake" }))
+            addView(portIcon.apply { setOnClickListener { onSettings?.invoke() } }, LinearLayout.LayoutParams(icon, icon))  // no ripple or hint: only the owner knows
             gap()
-            addView(FrameLayout(context).apply {
-                addView(plugChip, LayoutParams(portSize, portSize).apply { setMargins(pad / 2, pad / 2, 0, 0) })
-                addView(alert, LayoutParams((barH * 0.15f).roundToInt(), (barH * 0.15f).roundToInt(), Gravity.TOP or Gravity.START))
-                setOnClickListener { onSettings?.invoke() }  // no ripple or hint: only the owner knows
-            }, LinearLayout.LayoutParams(portSize + pad / 2, portSize + pad / 2))
-            gap()
-            addView(LinearLayout(context).apply {
-                orientation = LinearLayout.VERTICAL
-                addView(battery, LinearLayout.LayoutParams((barH * 1.25f).roundToInt(), (barH * 0.3f).roundToInt()))
-                addView(spread(percent, View(context), batteryLabel), LinearLayout.LayoutParams((barH * 1.25f).roundToInt(), -2))
-            })
+            addView(batteryIcon, LinearLayout.LayoutParams(icon, icon))
         }
         addView(row, LayoutParams(-1, -1).apply { setMargins(pad * 2, pad, pad * 2, pad + pad / 2) })
         layoutParams = LinearLayout.LayoutParams(-1, barH)
@@ -170,30 +159,26 @@ class TruckBar(context: Context) : FrameLayout(context) {
 
     fun show(t: Truck) {
         val b = BarText.of(t, java.util.Locale.getDefault().country in setOf("US", "GB", "LR", "MM"))
-        gearLetter.text = b.gear; gearWord.text = b.gearWord
-        gearLetter.setTextColor(if (b.gearActive) 0xFFD2E3FC.toInt() else WHITE)
-        gearWord.setTextColor(if (b.gearActive) BLUE else MUTED)
-        gearChip.background = box(if (b.gearActive) 0xFF1E2B44.toInt() else CARD, if (b.gearActive) BLUE else OUTLINE)
-        card.background = Chamfer(CARD, if (b.charging) GREEN else OUTLINE, barH * 0.13f)
+        gearIcon.set(b.gear, b.gearWord, b.brakeOn)
+        card.background = Chamfer(BLACK, if (b.charging) GREEN else OUTLINE, barH * 0.13f)
         range.text = withUnit(b.range, b.rangeUnit); energy.text = b.energy
         mid.text = withUnit(b.mid, b.midUnit); midLabel.text = b.midLabel
         meterLeft.text = b.meterLeft; meterCenter.text = b.meterCenter; meterRight.text = b.meterRight
         meter.from = b.meterFrom; meter.to = b.meterTo; meter.mark = b.meterMark
         meter.fill = if (b.meterTone == BarText.Tone.BAD) RED else GREEN; meter.invalidate()
-        power.text = withUnit(b.power, "kW"); power.setTextColor(tone(b.powerTone)); caption.text = b.caption
-        brake.text = b.brake
-        plugChip.visibility = if (b.port == BarText.Port.HIDDEN) View.INVISIBLE else View.VISIBLE
-        alert.visibility = if (b.port == BarText.Port.OPEN) View.VISIBLE else View.GONE
-        val (word, fg, fill) = when (b.port) {
-            BarText.Port.PLUGGED -> Triple("Plugged", GREEN, 0xFF1D3326.toInt())
-            BarText.Port.OPEN -> Triple("Open", RED, 0xFF3A1F22.toInt())
-            else -> Triple("Closed", MUTED, CARD)
+        power.text = withUnit(b.power, "kW").apply {
+            if (b.timeLeft.isNotEmpty()) {
+                append("   "); val s = length; append(b.timeLeft)
+                setSpan(AbsoluteSizeSpan((big * 0.62f).roundToInt()), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(ForegroundColorSpan(GREEN), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                val l = length; append(" ${b.timeLabel}")
+                setSpan(AbsoluteSizeSpan(unit.roundToInt()), l, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(ForegroundColorSpan(LIGHT), l, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
         }
-        plugLabel.text = word; plugLabel.setTextColor(if (b.port == BarText.Port.CLOSED) LIGHT else fg)
-        plug.color = fg; plug.invalidate()
-        plugChip.background = box(fill, if (b.port == BarText.Port.CLOSED) OUTLINE else fg)
-        battery.fill = b.fill; battery.charging = b.charging; battery.invalidate()
-        percent.text = withUnit(b.percent, "%"); batteryLabel.text = b.batteryLabel
+        power.setTextColor(tone(b.powerTone)); caption.text = b.caption
+        portIcon.set(if (b.charging && b.port == BarText.Port.PLUGGED) PortIcon.CHARGING else b.port.ordinal)
+        batteryIcon.set(b.percent.toIntOrNull())
     }
 
     // ---- building blocks ----
@@ -226,14 +211,6 @@ class TruckBar(context: Context) : FrameLayout(context) {
         (r as? TextView)?.gravity = Gravity.END
     }
 
-    private fun chip(top: View, word: TextView) = LinearLayout(context).apply {
-        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
-        addView(top, if (top is TextView) LinearLayout.LayoutParams(-2, -2) else LinearLayout.LayoutParams((barH * 0.26f).roundToInt(), (barH * 0.26f).roundToInt()))
-        addView(word, LinearLayout.LayoutParams(-2, -2).apply { topMargin = pad / 3 })
-    }
-
-    private fun box(fill: Int, stroke: Int) = Chamfer(fill, stroke, barH * 0.09f)
-
     /** GM's button shape: square, top-right corner cut on a diagonal, thin outline. */
     private class Chamfer(private val fill: Int, private val stroke: Int, private val cut: Float) : android.graphics.drawable.Drawable() {
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -265,42 +242,125 @@ class TruckBar(context: Context) : FrameLayout(context) {
         }
     }
 
-    /** Battery with 10 cells, a terminal nub and a bolt while charging. */
-    private class Cells(c: Context) : View(c) {
-        var fill = 0f; var charging = false
-        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        override fun onDraw(c: Canvas) {
-            val w = width.toFloat(); val h = height.toFloat(); val nub = w * 0.04f; val bw = w - nub; val gap = h * 0.08f
-            p.color = 0xFF5F6368.toInt(); c.drawRoundRect(RectF(bw, h * 0.3f, w, h * 0.7f), 3f, 3f, p)
-            p.color = if (charging) 0x6681C995 else 0xFF3C4043.toInt(); c.drawRoundRect(RectF(0f, 0f, bw, h), h * 0.15f, h * 0.15f, p)
-            p.color = 0xFF3C4043.toInt(); if (charging) c.drawRoundRect(RectF(2f, 2f, bw - 2f, h - 2f), h * 0.13f, h * 0.13f, p)
-            val n = 10; val cw = (bw - gap * (n + 1)) / n; val lit = (fill * n).roundToInt()
-            for (i in 0 until n) {
-                p.color = if (i < lit) GREEN else 0xFF202124.toInt()
-                val x = gap + i * (cw + gap); c.drawRoundRect(RectF(x, gap, x + cw, h - gap), 3f, 3f, p)
+    /** Icons drawn on a 320-unit square, like the SVG designs they come from. */
+    private abstract class Icon(c: Context) : View(c) {
+        protected val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        abstract fun draw320(c: Canvas)
+        override fun onDraw(c: Canvas) { c.save(); c.scale(width / 320f, height / 320f); draw320(c); c.restore() }
+        protected fun fill(color: Int) = p.apply { style = Paint.Style.FILL; this.color = color; shader = null }
+        protected fun line(color: Int, w: Float) = p.apply { style = Paint.Style.STROKE; this.color = color; strokeWidth = w; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND; shader = null }
+        protected fun word(c: Canvas, text: String, y: Float, size: Float, color: Int, bold: Boolean = false) {
+            fill(color).apply { textSize = size; textAlign = Paint.Align.CENTER; typeface = Typeface.create(if (bold) "sans-serif-medium" else "sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL) }
+            c.drawText(text, 160f, y, p)
+        }
+        /** The black GM tile: gray outline, top-right corner cut. */
+        protected fun tile(c: Canvas) {
+            val path = android.graphics.Path().apply { moveTo(3f, 3f); lineTo(281f, 3f); lineTo(317f, 39f); lineTo(317f, 317f); lineTo(3f, 317f); close() }
+            c.drawPath(path, fill(BLACK)); c.drawPath(path, line(OUTLINE, 3f))
+        }
+        protected fun rr(c: Canvas, l: Float, t: Float, r: Float, b: Float, rad: Float, paint: Paint) = c.drawRoundRect(RectF(l, t, r, b), rad, rad, paint)
+    }
+
+    /** Big gear letter with a P R N D L ring; red brackets close around it while the parking brake is on. */
+    private class GearIcon(c: Context) : Icon(c) {
+        private var gear = "—"; private var gearWord = ""; private var brake = false
+        fun set(g: String, w: String, b: Boolean) {
+            if (g == gear && w == gearWord && b == brake) return
+            gear = g; gearWord = w; brake = b; contentDescription = "$w${if (b) ", parking brake on" else ""}"; invalidate()
+        }
+        override fun draw320(c: Canvas) {
+            tile(c)
+            val color = when (gear) { "—" -> MUTED; "R" -> AMBER; else -> BLUE }
+            val ring = RectF(30f, 30f, 290f, 290f)
+            listOf("P", "R", "N", "D", "L").forEachIndexed { i, g ->
+                c.drawArc(ring, 135f + i * 54f + 4f, 46f, false, line(if (g == gear) color else 0x1FF4F7FA, 9f))
             }
-            if (charging) {
-                p.color = 0xFF0F1115.toInt()
-                val cx = bw / 2; val path = android.graphics.Path().apply {
-                    moveTo(cx + h * .08f, h * .12f); lineTo(cx - h * .16f, h * .55f); lineTo(cx, h * .55f)
-                    lineTo(cx - h * .08f, h * .88f); lineTo(cx + h * .16f, h * .45f); lineTo(cx, h * .45f); close()
-                }
-                c.drawPath(path, p)
+            if (brake) {
+                val o = RectF(78f, 83f, 242f, 247f)
+                c.drawArc(o, 140f, 80f, false, line(BRAKE, 9f)); c.drawArc(o, -40f, 80f, false, line(BRAKE, 9f))
             }
+            word(c, gear, 214f, 140f, color, bold = true)
+            word(c, gearWord, 292f, 38f, WHITE)
         }
     }
 
-    /** A simple plug: body, two prongs and a cable. */
-    private class Plug(c: Context) : View(c) {
-        var color = RED
-        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        override fun onDraw(c: Canvas) {
-            val s = minOf(width, height).toFloat(); p.color = color
-            p.style = Paint.Style.FILL
-            c.drawRoundRect(RectF(s * .22f, s * .3f, s * .78f, s * .68f), s * .08f, s * .08f, p)
-            c.drawRect(s * .32f, s * .08f, s * .42f, s * .3f, p); c.drawRect(s * .58f, s * .08f, s * .68f, s * .3f, p)
-            p.style = Paint.Style.STROKE; p.strokeWidth = s * .09f
-            c.drawLine(s * .5f, s * .68f, s * .5f, s * .95f, p)
+    /** The Sierra EV charge door, drawn from the real one: shut, open with the socket, plugged in, or charging. */
+    private class PortIcon(c: Context) : Icon(c) {
+        private var state = -1
+        fun set(s: Int) {
+            if (s == state) return
+            state = s; contentDescription = "Charge port ${WORDS[s].lowercase()}"; invalidate()
+        }
+        override fun draw320(c: Canvas) {
+            tile(c)
+            val shut = state == BarText.Port.CLOSED.ordinal || state == BarText.Port.HIDDEN.ordinal
+            val plugged = state == BarText.Port.PLUGGED.ordinal || state == CHARGING
+            val color = COLORS[state]
+            if (!shut) {
+                var a = 0.22f
+                if (state == CHARGING) {  // the glow breathes while charging
+                    a = 0.11f + 0.11f * kotlin.math.sin(android.os.SystemClock.uptimeMillis() / 1800f * 2 * Math.PI.toFloat())
+                    postInvalidateDelayed(60)
+                }
+                p.style = Paint.Style.FILL
+                p.shader = android.graphics.RadialGradient(176f, 132f, 112f, (color and 0xFFFFFF) or ((a * 255).toInt() shl 24), color and 0xFFFFFF, android.graphics.Shader.TileMode.CLAMP)
+                c.drawCircle(176f, 132f, 112f, p); p.shader = null
+            }
+            rr(c, 66f, 40f, 286f, 224f, 40f, fill(0xFF0A0A0A.toInt())); rr(c, 66f, 40f, 286f, 224f, 40f, line(OUTLINE, 4f))
+            if (shut) {
+                rr(c, 72f, 46f, 280f, 218f, 35f, fill(0xFF1C1D1F.toInt())); rr(c, 72f, 46f, 280f, 218f, 35f, line((color and 0xFFFFFF) or 0x73000000, 2f))
+                c.drawLine(266f, 118f, 266f, 146f, line(DIM, 5f))
+                c.save(); c.translate(176f, 132f); c.scale(1.4f, 1.4f); fill(DIM)
+                rr(c, -11f, -6f, 11f, 8f, 4f, p); c.drawRect(-7f, -14f, -4f, -6f, p); c.drawRect(4f, -14f, 7f, -6f, p); c.drawRect(-1.5f, 8f, 1.5f, 17f, p)
+                c.restore()
+            } else {
+                val door = android.graphics.Path().apply { moveTo(68f, 58f); lineTo(26f, 76f); quadTo(18f, 79f, 18f, 88f); lineTo(18f, 176f); quadTo(18f, 185f, 26f, 188f); lineTo(68f, 206f); close() }
+                c.drawPath(door, fill(0xFF1C1D1F.toInt())); c.drawPath(door, line(OUTLINE, 3f))
+                rr(c, 80f, 54f, 272f, 210f, 26f, fill(0xFF161718.toInt()))
+                rr(c, 236f, 106f, 258f, 150f, 6f, fill(0xFF0D0D0D.toInt())); rr(c, 236f, 106f, 258f, 150f, 6f, line(EDGE, 2f))
+                c.drawLine(247f, 126f, 253f, 144f, line(DIM, 5f))
+                rr(c, 132f, 56f, 220f, 208f, 44f, fill(0xFF0A0A0A.toInt()))
+                rr(c, 141f, 64f, 211f, 200f, 35f, line(color, 5f))
+                if (!plugged) {
+                    c.drawPath(android.graphics.Path().apply { moveTo(166f, 80f); lineTo(186f, 80f); lineTo(182f, 92f); lineTo(170f, 92f); close() }, fill(0xFF26272A.toInt()))
+                    c.drawCircle(176f, 112f, 22f, fill(0xFF101010.toInt())); c.drawCircle(176f, 112f, 22f, line(DIM, 2.5f))
+                    fill(EDGE); c.drawCircle(168f, 105f, 4.5f, p); c.drawCircle(184f, 105f, 4.5f, p); c.drawCircle(176f, 122f, 4.5f, p); c.drawCircle(167f, 118f, 2.2f, p); c.drawCircle(185f, 118f, 2.2f, p)
+                    rr(c, 152f, 144f, 200f, 186f, 10f, fill(0xFF1C1D1F.toInt())); rr(c, 152f, 144f, 200f, 186f, 10f, line(EDGE, 2f))
+                    rr(c, 163f, 160f, 189f, 169f, 3f, fill(0xFF0A0A0A.toInt()))
+                } else {
+                    val cable = android.graphics.Path().apply { moveTo(190f, 196f); cubicTo(214f, 214f, 236f, 226f, 252f, 248f) }
+                    c.drawPath(cable, line(0xFF2A2B2E.toInt(), 16f)); c.drawPath(cable, line((color and 0xFFFFFF) or 0x99000000.toInt(), 3f))
+                    rr(c, 148f, 76f, 204f, 200f, 28f, fill(0xFF26272A.toInt())); rr(c, 148f, 76f, 204f, 200f, 28f, line(color, 3f))
+                    rr(c, 162f, 88f, 190f, 96f, 4f, fill((color and 0xFFFFFF) or 0x59000000))
+                    if (state == CHARGING) c.drawPath(android.graphics.Path().apply {
+                        moveTo(182f, 112f); lineTo(160f, 146f); lineTo(176f, 146f); lineTo(170f, 174f); lineTo(194f, 136f); lineTo(178f, 136f); close()
+                    }, fill(color))
+                }
+            }
+            word(c, WORDS[state], 292f, 38f, WHITE)
+        }
+        companion object {
+            const val CHARGING = 4  // after BarText.Port's HIDDEN, CLOSED, PLUGGED, OPEN
+            private val WORDS = listOf("Port", "Closed", "Plugged", "Open", "Charging")
+            private val COLORS = listOf(MUTED, MUTED, BLUE, AMBER, MINT)
+        }
+    }
+
+    /** The white Sierra in a 270° ring that fills with the charge; amber at 30% or less, red at 15% or less. */
+    private class BatteryIcon(c: Context) : Icon(c) {
+        private var pct: Int? = -1
+        private val truck = android.graphics.BitmapFactory.decodeResource(c.resources, R.drawable.sierra_truck)
+        fun set(v: Int?) {
+            if (v == pct) return
+            pct = v; contentDescription = v?.let { "Battery $it percent" } ?: "Battery unknown"; invalidate()
+        }
+        override fun draw320(c: Canvas) {
+            val ring = RectF(30f, 30f, 290f, 290f)
+            c.drawArc(ring, 135f, 270f, false, line(0x1FF4F7FA, 11f))
+            val v = pct
+            if (v != null && v > 0) c.drawArc(ring, 135f, 270f * v.coerceAtMost(100) / 100f, false, line(if (v <= 15) LOW else if (v <= 30) AMBER else MINT, 11f))
+            truck?.let { c.drawBitmap(it, null, RectF(38f, 74f, 282f, 211f), p.apply { shader = null; isFilterBitmap = true }) }
+            word(c, v?.let { "$it%" } ?: "—", 298f, 64f, WHITE, bold = true)
         }
     }
 
@@ -313,7 +373,13 @@ class TruckBar(context: Context) : FrameLayout(context) {
         private const val GREEN = 0xFF81C995.toInt()
         private const val RED = 0xFFF28B82.toInt()
         private const val BLUE = 0xFF8AB4F8.toInt()
-        private const val CARD = 0xFF181C24.toInt()
+        private const val AMBER = 0xFFF2BD64.toInt()
+        private const val MINT = 0xFF5ED7BD.toInt()
+        private const val LOW = 0xFFFF857D.toInt()
+        private const val BRAKE = 0xFFFF857D.toInt()
+        private const val DIM = 0xFF5F6368.toInt()
+        private const val EDGE = 0xFF3C4043.toInt()
+        private const val BLACK = 0xFF000000.toInt()
         private const val OUTLINE = 0xFF8E939B.toInt()   // the truck's button outline gray
     }
 }

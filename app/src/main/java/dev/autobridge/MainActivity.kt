@@ -46,7 +46,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         surface = SurfaceView(this).apply { holder.addCallback(this@MainActivity) }
         // The waiting screen looks like a Linux console: monospace, coloured status tags, blinking cursor.
         status = TextView(this).apply { textSize = 20f; typeface = Typeface.MONOSPACE; setLineSpacing(8f, 1f) }
-        settingsPanel = SettingsPanel(this, editWifi = ::editWifi, toast = ::show, onStatusBar = ::applyStatusBar)
+        settingsPanel = SettingsPanel(this, editWifi = ::editWifi, toast = ::show, onShapeChanged = ::shapeChanged)
         val settings = Button(this).apply { text = "Settings"; textSize = 18f; typeface = Typeface.MONOSPACE; setOnClickListener { settingsPanel.open() } }
         // The truck's data in a smoky-glass strip under Android Auto (always shown).
         truckBar = TruckBar(this).apply { onSettings = { settingsPanel.open() } }
@@ -117,6 +117,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     private fun applyBar() { truckBar.visibility = if (Settings(this).barEnabled) View.VISIBLE else View.GONE }
+
+    /** A setting changed Android Auto's shape. It only measures the screen when it connects, so with a phone
+     *  connected, close and reopen AutoBridge to reconnect at the new size; otherwise just apply it. */
+    private fun shapeChanged() {
+        if (BridgeService.instance?.video == null) { applyBar(); applyStatusBar(); return }
+        Restart.now(this)
+    }
 
     @Deprecated("Back gesture; this app has no AndroidX")
     override fun onBackPressed() { if (!settingsPanel.close()) super.onBackPressed() }
@@ -212,5 +219,28 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     private fun startService() {
         if (BridgeService.instance == null) startForegroundService(Intent(this, BridgeService::class.java))
+    }
+}
+
+/** Kills AutoBridge's process and opens it again (runs in its own ":restart" process). */
+class Restart : Activity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        android.os.Process.killProcess(intent.getIntExtra(PID, 0))
+        // Drop the old screens too (the cluster's CarAppActivity task would otherwise come back on top).
+        getSystemService(android.app.ActivityManager::class.java).appTasks
+            .filter { it.taskInfo.taskId != taskId }.forEach { runCatching { it.finishAndRemoveTask() } }
+        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        finish()
+        Runtime.getRuntime().exit(0)
+    }
+
+    companion object {
+        private const val PID = "pid"
+        fun now(a: Activity) {
+            a.startActivity(Intent(a, Restart::class.java).putExtra(PID, android.os.Process.myPid()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            a.finish()
+            Runtime.getRuntime().exit(0)
+        }
     }
 }

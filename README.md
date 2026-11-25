@@ -21,9 +21,10 @@ Android Auto talks to the relay on its own phone and the truck connects out to t
 - **Truck integration**: turn-by-turn in GM's instrument cluster, now playing on the dashboard
   and Media card, steering-wheel media keys, the truck's GPS for Maps, EV plug types
   (J1772, CCS1, Tesla NACS) for charger search, and the voice button for Google Assistant.
-- **Truck bar** under Android Auto: gear, range, energy, speed, a regen/power meter, parking
-  brake, charge port, and battery. While charging it shows charging power, time to your charge
-  limit, and the current limit. It uses the truck's own units (miles, °F).
+- **Truck bar** under Android Auto, black like the truck's own screens: a gear icon (red brackets
+  when the parking brake is on), range, energy, speed, a regen/power meter, the charge door
+  (closed, open, plugged in, charging) and the battery ring. While charging it shows charging power
+  with the time left to your charge limit, counting down. It uses the truck's own units (miles, °F).
 - **Logs** sent to your phone with one tap, for troubleshooting.
 - Starts with the truck, and keeps the truck's real driving state, so Android Auto's driving
   restrictions stay on.
@@ -53,11 +54,12 @@ Android Auto talks to the relay on its own phone and the truck connects out to t
 
 ## Everyday use
 
-- **Settings:** tap the **charge-port chip** on the truck bar. It's deliberately unmarked, so only
+- **Settings:** tap the **charge door icon** on the truck bar. It's deliberately unmarked, so only
   you know it's a button. With the bar turned off, use the **Settings** button on AutoBridge's
   waiting screen (shown when Android Auto isn't connected). Close with **Close** or the back gesture.
-  - *Truck bar*, *Truck status bar* and *Sharper picture* switches. These apply at the next phone
-    connection, because Android Auto measures the screen when it connects.
+  - *Truck bar*, *Truck status bar* and *Sharper picture* switches. Android Auto only measures the
+    screen when it connects, so when you close settings after changing one, AutoBridge closes and
+    reopens by itself and the phone reconnects at the new size.
   - Hotspot details (Edit, Forget), the voice button setting, Send log, version.
 - **Voice button:** a long press usually reaches the phone's assistant over Bluetooth. For a short
   press, choose *AutoBridge* as the truck's digital assistant (Settings, Voice button). That replaces
@@ -72,7 +74,7 @@ Android Auto talks to the relay on its own phone and the truck connects out to t
 |---|---|
 | Stuck on "Looking for the AutoBridge Phone app" | Open AutoBridge Phone once; check the phone is on the truck's hotspot. |
 | Music plays but no sound | Truck Bluetooth settings for the phone: Media audio **off**. |
-| Picture stretched after changing a setting or updating | Disconnect and reconnect once. |
+| Picture stretched after updating | Disconnect and reconnect once. |
 | Black picture with the sharper picture on | It falls back to 1080p by itself on the next connection; or switch Sharper picture off. |
 | Anything else | Send a log and open an issue with it. Logs contain your hotspot name and BSSID, never the password. |
 
@@ -101,7 +103,7 @@ Phone (Android Auto)                           Truck (AutoBridge)
 | `app/.../BridgeService.kt` | Service: Bluetooth, finding the phone, session, truck data, logs |
 | `app/src/main/cpp/bridge.cpp` | The Android Auto session on [aasdk](https://github.com/opencardev/aasdk) |
 | `app/.../Media.kt`, `Display.kt` | Video decoding and sizing, audio, microphone |
-| `app/.../TruckBar.kt`, `SettingsPanel.kt` | The truck bar and the settings page |
+| `app/.../TruckBar.kt`, `SettingsPanel.kt` | The truck bar (and its icons) and the settings page |
 | `app/.../NowPlaying.kt`, `ClusterNav*.kt`, `VoiceAssistant.kt` | Media source, cluster turn-by-turn, voice button |
 | `phone/` | The relay, log saving, and the Wi-Fi details screen |
 
@@ -125,7 +127,7 @@ Signed release builds read the key from environment variables, so no secret live
 
 ```bash
 AB_KEYSTORE=/path/upload.jks AB_KEYSTORE_PASSWORD=... \
-  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=30 -PversionName=0.4.5
+  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=31 -PversionName=0.4.6
 ```
 
 Tests: `./gradlew :app:testDebugUnitTest :phone:testDebugUnitTest`.
