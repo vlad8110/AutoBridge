@@ -51,9 +51,14 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             setOnClickListener { BridgeService.instance?.sendLogs("button") ?: show("AutoBridge isn't running yet") }
         }
         // The truck's battery, range, gear and brake, big enough to read at a glance.
+        // Frosted-glass card under the buttons, in the truck's clean sans-serif style.
         truckBar = TextView(this).apply {
-            textSize = 56f; typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD); setTextColor(Console.TRUCK)
-            setPadding(0, 24, 0, 0); visibility = View.GONE
+            textSize = 30f; typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL); setTextColor(0xFFF2F4F8.toInt())
+            letterSpacing = 0.03f; gravity = Gravity.CENTER_VERTICAL; setPadding(40, 22, 40, 22); visibility = View.GONE
+            background = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(0x33FFFFFF, 0x14FFFFFF),  // light at the top, like glass catching light
+            ).apply { cornerRadius = 28f; setStroke(2, 0x40FFFFFF) }
         }
         panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -69,7 +74,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                     })
                 }
             }, LinearLayout.LayoutParams(-2, -2))
-            addView(truckBar, LinearLayout.LayoutParams(-1, -2))
+            addView(truckBar, LinearLayout.LayoutParams(-2, -2).apply { topMargin = 24 })
         }
         root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)

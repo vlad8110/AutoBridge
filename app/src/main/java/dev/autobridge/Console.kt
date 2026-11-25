@@ -16,7 +16,6 @@ object Console {
     private val BLUE = 0xFF89b4fa.toInt()
     private val PURPLE = 0xFFcba6f7.toInt()
     private val GRAY = 0xFF6c7086.toInt()
-    val TRUCK = 0xFF94e2d5.toInt()  // teal: stands out from the console text
 
     enum class Kind(val tag: String) { OK("  OK  "), WAIT(" WAIT "), FAIL(" FAIL "), INFO(" INFO ") }
 
