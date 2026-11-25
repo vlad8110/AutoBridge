@@ -64,6 +64,8 @@ Android Auto talks to the relay on its own phone and the truck connects out to t
   - An EV battery panel: charge level with your charge limit, energy, range, and while charging
     the power, time to the limit, the time it'll be ready, range added per hour, energy still to
     add and the current limit, all live.
+  - **Sound · Equalizer**: a 10-band EQ (32 Hz to 16 kHz, ±12 dB) with presets, for Android Auto's
+    music only. It lowers the level by the curve's peak so boosts never distort.
   - Hotspot details (Edit, Forget), the voice button setting, Send log, version.
 - **Voice button:** a long press usually reaches the phone's assistant over Bluetooth. For a short
   press, choose *AutoBridge* as the truck's digital assistant (Settings, Voice button). That replaces
@@ -133,7 +135,7 @@ Signed release builds read the key from environment variables, so no secret live
 
 ```bash
 AB_KEYSTORE=/path/upload.jks AB_KEYSTORE_PASSWORD=... \
-  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=38 -PversionName=0.5.3
+  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=39 -PversionName=0.6.0
 ```
 
 Tests: `./gradlew :app:testDebugUnitTest :phone:testDebugUnitTest`.

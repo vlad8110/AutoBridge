@@ -42,6 +42,7 @@ class SettingsPanel(
     private val voiceDetail = text(26f, MUTED).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
     private val tiles = mutableListOf<() -> Unit>()
     private val batteryPanel = BatteryPanel(context, k)
+    private val eqPanel = EqPanel(context, k)
 
     init {
         setBackgroundColor(BLACK)
@@ -65,6 +66,7 @@ class SettingsPanel(
                 addView(facts("VERSION", version, "BATTERY", battery), LinearLayout.LayoutParams(0, -2, 1f))
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(28) })
             addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
+            addView(button("SOUND · EQUALIZER") { eqPanel.open() }, LinearLayout.LayoutParams(-1, px(120)).apply { bottomMargin = px(22) })
             addView(button("ANDROID AUTO", primary = true) { close() }, LinearLayout.LayoutParams(-1, px(120)))
             addView(button("EXIT") { onExit() }, LinearLayout.LayoutParams(-1, px(120)).apply { topMargin = px(22) })
         }
@@ -97,6 +99,7 @@ class SettingsPanel(
             addView(hero, LinearLayout.LayoutParams(px(820), -1))
             addView(ScrollView(context).apply { isFillViewport = true; addView(right) }, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = px(56) })
         }, LayoutParams(-1, -1))
+        addView(eqPanel, LayoutParams(-1, -1))  // on top of the settings page when open
     }
 
     fun open() { refresh(); visibility = VISIBLE; showTruck(BridgeService.latestTruck) }
@@ -110,7 +113,7 @@ class SettingsPanel(
     }
 
     /** True if the page was open (so Back closes it instead of leaving AutoBridge). */
-    fun close(): Boolean = (visibility == VISIBLE).also {
+    fun close(): Boolean = eqPanel.close() || (visibility == VISIBLE).also {
         visibility = GONE
         if (shapeChanged) { shapeChanged = false; onShapeChanged() }
     }

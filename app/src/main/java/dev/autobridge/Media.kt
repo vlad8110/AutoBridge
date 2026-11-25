@@ -168,6 +168,7 @@ class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> U
                         val b = queue.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS)
                         if (b != null) {
                             if (!playing) { track.play(); playing = true }
+                            if (alwaysOn) Equalizer.music.process(b)  // music only: directions stay clear
                             track.write(b, 0, b.size)
                         } else if (playing && !wanted && !alwaysOn) {
                             track.stop()  // plays out what's buffered, then the truck sees this sound as finished

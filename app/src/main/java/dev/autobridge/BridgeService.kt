@@ -96,6 +96,7 @@ class BridgeService : Service() {
         super.onCreate()
         instance = this
         Logs.startCapture(this)
+        Settings(this).let { s -> Equalizer.music.gains = Equalizer.decode(s.eqGains); Equalizer.music.enabled = s.eqEnabled }
         audio = AudioOut(getSystemService(AudioManager::class.java)) { say("The car took the speakers (another audio source started)") }
         // At boot only connectedDevice is allowed; the screen upgrades to media + mic when it opens.
         startForeground(1, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
@@ -575,6 +576,10 @@ class Settings(context: Context) {
     var statusBarShown: Boolean get() = p.getBoolean("statusBar", true); set(v) { p.edit().putBoolean("statusBar", v).commit() }
     /** Offer the sharper H.265 1440p picture (settings page); off forces the proven 1080p. */
     var hevcEnabled: Boolean get() = p.getBoolean("hevc", true); set(v) { p.edit().putBoolean("hevc", v).commit() }
+    /** The music EQ (settings page): band gains in dB, on/off, and the preset name ("Custom" once edited). */
+    var eqGains: String? get() = p.getString("eqGains", null); set(v) = p.edit().putString("eqGains", v).apply()
+    var eqEnabled: Boolean get() = p.getBoolean("eqOn", true); set(v) = p.edit().putBoolean("eqOn", v).apply()
+    var eqPreset: String get() = p.getString("eqPreset", "Flat") ?: "Flat"; set(v) = p.edit().putString("eqPreset", v).apply()
 
     fun forget() = p.edit().remove("ssid").remove("password").remove("bssid").apply()
 
