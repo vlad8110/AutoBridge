@@ -187,7 +187,7 @@ class MainActivity : Activity() {
                     d == null -> "Not on Wi-Fi. Join the truck's hotspot, then tap Refresh."
                     d.bssid.isEmpty() || d.bssid == "02:00:00:00:00:00" || d.ssid == "<unknown ssid>" ->
                         "Turn on Location so Android shows the Wi-Fi details."
-                    else -> { details = d; null }
+                    else -> { details = d; WifiDetails.remember(this, d); null }
                 }
             }
         }
