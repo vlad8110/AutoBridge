@@ -18,6 +18,7 @@ class Equalizer(private val rate: Int = 48_000) {
     @Volatile var enabled = true
 
     @Volatile private var dirty = true
+    private var active = IntArray(0)  // bands not at 0 dB; kept here so the audio thread allocates nothing
     private var coef = Array(BANDS.size) { DoubleArray(5) }  // b0 b1 b2 a1 a2, normalised
     private val state = Array(2) { Array(BANDS.size) { DoubleArray(4) } }  // per channel: x1 x2 y1 y2
     private var preamp = 1.0
@@ -26,7 +27,6 @@ class Equalizer(private val rate: Int = 48_000) {
     fun process(pcm: ByteArray) {
         if (!enabled) return
         if (dirty) rebuild()
-        val active = coef.indices.filter { gains[it] != 0f }
         if (active.isEmpty()) return
         var i = 0
         var ch = 0
@@ -49,6 +49,7 @@ class Equalizer(private val rate: Int = 48_000) {
         dirty = false
         val g = gains
         coef = Array(BANDS.size) { peaking(BANDS[it], g[it].toDouble(), Q) }
+        active = g.indices.filter { g[it] != 0f }.toIntArray()
         // Neighbouring boosts add up, so the headroom comes from the real peak of the whole curve.
         val peak = (0..240).maxOf { k -> gainAt(20.0 * 1000.0.pow(k / 240.0)) }
         preamp = 1 / peak.coerceAtLeast(1.0)

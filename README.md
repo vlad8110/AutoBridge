@@ -79,7 +79,7 @@ Android Auto talks to the relay on its own phone and the truck connects out to t
 
 | What you see | What to do |
 |---|---|
-| Phone's Wi-Fi dropped | Leave Bluetooth on: once the Wi-Fi is back, AutoBridge asks the phone to rejoin within about 10 seconds. |
+| Phone's Wi-Fi dropped | Leave Bluetooth on: once the Wi-Fi is back, AutoBridge notices within about 5 seconds and asks the phone to rejoin right away. |
 | Stuck on "Looking for the AutoBridge Phone app" | Open AutoBridge Phone once; check the phone is on the truck's hotspot. |
 | Music plays but no sound | Truck Bluetooth settings for the phone: Media audio **off**. |
 | Picture stretched after updating | Disconnect and reconnect once. |
@@ -135,7 +135,7 @@ Signed release builds read the key from environment variables, so no secret live
 
 ```bash
 AB_KEYSTORE=/path/upload.jks AB_KEYSTORE_PASSWORD=... \
-  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=39 -PversionName=0.6.0
+  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=40 -PversionName=0.6.1
 ```
 
 Tests: `./gradlew :app:testDebugUnitTest :phone:testDebugUnitTest`.

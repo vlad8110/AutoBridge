@@ -52,7 +52,7 @@ class BridgeService : Service() {
         @Volatile var phoneName: String? = null
         const val EXTRA_BOOT = "boot"
         /** Phone silent this long = gone. Its pings normally come every second or so (logged at session start). */
-        const val PING_SILENCE_MS = 12_000L
+        const val PING_SILENCE_MS = 5_000L  // pings come every 1.0 s; the longest gap seen on the truck was 1.7 s
         var onStatus: ((String) -> Unit)? = null
         var onVideoActive: ((Boolean) -> Unit)? = null
         /** Projection surface from MainActivity; may exist before or after the service starts. */
@@ -314,6 +314,7 @@ class BridgeService : Service() {
             if (Native.sincePingMs(h) > PING_SILENCE_MS) {
                 endSession()
                 say("Disconnected: the phone stopped answering (Wi-Fi lost?)")
+                busyAt = 0  // ask the phone to rejoin right away, not after the usual 5 s settle
                 return
             }
             main.postDelayed(this, 2000)
