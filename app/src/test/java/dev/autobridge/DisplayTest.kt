@@ -30,8 +30,14 @@ class DisplayTest {
         assertEquals(p.configs[0].codecW.toDouble() / p.configs[0].contentW, p.configs[1].codecW.toDouble() / p.configs[1].contentW, 0.01)
     }
 
+    @Test fun squarishScreenUnder2000WideStillGetsH265() {
+        // 1080p fills a 1900x1500 screen only 1440 wide (side margins), so it was being stretched.
+        assertEquals(VideoPlan.H265, Display.plan(1900, 1500, 160, hevcAllowed = true) { _, _ -> true }.codec)
+    }
+
     @Test fun h264WhenH265IsNotWorthItOrFailed() {
         assertEquals(VideoPlan.H264, Display.plan(1920, 720, 160, hevcAllowed = true) { _, _ -> true }.codec)   // not bigger than 1080p
+        assertEquals(VideoPlan.H264, Display.plan(1280, 720, 160, hevcAllowed = true) { _, _ -> true }.codec)   // 720p screen
         assertEquals(VideoPlan.H264, Display.plan(2560, 1080, 160, hevcAllowed = false) { _, _ -> true }.codec) // failed before
         assertEquals(VideoPlan.H264, Display.plan(2560, 1080, 160, hevcAllowed = true) { _, _ -> false }.codec) // car can't decode
         assertEquals(listOf(3), Display.plan(2560, 1080, 160, hevcAllowed = false) { _, _ -> true }.configs.map { it.resolution })

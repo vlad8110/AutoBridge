@@ -80,6 +80,7 @@ class BridgeService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        Logs.startCapture()
         audio = AudioOut(getSystemService(AudioManager::class.java)) { say("The car took the speakers (another audio source started)") }
         // At boot only connectedDevice is allowed; the screen upgrades to media + mic when it opens.
         startForeground(1, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
@@ -275,11 +276,11 @@ class BridgeService : Service() {
             val header = listOf(
                 "Reason: $reason",
                 "Hotspot: ${s.ssid} / ${s.bssid}, car ${carIp()}, phone $ip",  // never the password
-                "Video: ${video?.let { "${it.codecW}x${it.codecH}" } ?: "not connected"}, H.265 ${if (s.hevcFailed) "failed in this version" else "allowed"}",
+                "Screen: ${s.viewW}x${s.viewH}, video: ${video?.let { "${it.codecW}x${it.codecH}" } ?: "not connected"}, H.265 ${if (s.hevcFailed) "failed in this version" else "allowed"}",
                 "GPS: ${if (gpsAllowed()) "allowed" else "not allowed"}, voice button: ${VoiceAssistant.status(this)}",
                 "Truck: ${truckText ?: "nothing shared"}",
                 "Route: ${ClusterNav.route}, cluster ${if (ClusterNav.sink != null) "bound" else "not bound"}",
-                "Screen: " + synchronized(this) { recent.joinToString(" | ") },
+                "Status: " + synchronized(this) { recent.joinToString(" | ") },
             )
             try {
                 Logs.send(ip, carIp(), name, Logs.collect(this, reason, header))

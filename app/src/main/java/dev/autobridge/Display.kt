@@ -47,7 +47,9 @@ object Display {
         val single = pick(viewW, viewH, densityDpi)
         val portrait = viewH > viewW
         val big = if (portrait) Triple(8, 1440, 2560) else Triple(4, 2560, 1440)
-        if (!hevcAllowed || maxOf(viewW, viewH) <= 2016 || !canDecodeHevc(big.second, big.third)) return VideoPlan(VideoPlan.H264, listOf(single))
+        // Worth it only when the best H.264 size is stretched to fill the screen (its visible part is narrower than the screen).
+        val upscaled = single.resolution in setOf(3, 7) && single.contentW < viewW * 0.95
+        if (!hevcAllowed || !upscaled || !canDecodeHevc(big.second, big.third)) return VideoPlan(VideoPlan.H264, listOf(single))
         val tiers = if (portrait) listOf(big, Triple(7, 1080, 1920), Triple(6, 720, 1280))
                     else listOf(big, Triple(3, 1920, 1080), Triple(2, 1280, 720))
         return VideoPlan(VideoPlan.H265, tiers.map { (res, w, h) -> sized(res, w, h, viewW, viewH, densityDpi) })
