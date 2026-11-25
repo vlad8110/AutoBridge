@@ -31,9 +31,13 @@ class RelayService : Service() {
         @Volatile private var carLine: Socket? = null
 
         /** Asks the truck for its log over the line the truck keeps open; false if the truck isn't connected. */
-        fun requestLog(): Boolean {
+        fun requestLog() = ask('L')
+        /** Asks the truck for a screenshot of AutoBridge's screen; it arrives like a log. */
+        fun requestScreenshot() = ask('S')
+
+        private fun ask(what: Char): Boolean {
             val s = carLine ?: return false
-            return try { s.getOutputStream().apply { write('L'.code); flush() }; true }
+            return try { s.getOutputStream().apply { write(what.code); flush() }; true }
                    catch (_: IOException) { runCatching { s.close() }; carLine = null; false }
         }
         @Volatile var status = "Starting…"

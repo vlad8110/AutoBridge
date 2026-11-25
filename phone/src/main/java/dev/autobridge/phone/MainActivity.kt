@@ -116,6 +116,12 @@ class MainActivity : Activity() {
                 }.also { it.layoutParams = lp(12) }), lp(14))
             addView(card("Relay", statusText), lp(12))
             addView(card("Logs from the truck", request,
+                chipButton("Screenshot of the truck screen") {
+                    Thread {
+                        val ok = RelayService.requestScreenshot()
+                        runOnUiThread { Toast.makeText(this@MainActivity, if (ok) "Asked the truck; the screenshot arrives in a few seconds" else "The truck isn't connected to this phone", Toast.LENGTH_SHORT).show() }
+                    }.start()
+                }.also { it.layoutParams = lp(8) },
                 LinearLayout(context).apply {
                     gravity = Gravity.CENTER_VERTICAL
                     addView(logText, lp(weight = 1f)); addView(change)

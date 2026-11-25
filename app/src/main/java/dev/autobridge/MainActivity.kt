@@ -6,13 +6,18 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.view.Gravity
 import android.view.MotionEvent
+import android.view.PixelCopy
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
@@ -22,6 +27,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
+import java.io.ByteArrayOutputStream
 
 /** Full-screen Android Auto projection, with a status panel while no phone is connected. */
 class MainActivity : Activity(), SurfaceHolder.Callback {
@@ -84,6 +90,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         super.onResume()
         BridgeService.onStatus = { show(it) }
         BridgeService.onTruck = { truckBar.show(it); settingsPanel.showTruck(it) }
+        BridgeService.capture = ::screenshot
         truckBar.show(BridgeService.latestTruck)
         BridgeService.instance?.fullForeground()
         ClusterNav.resumed(this)
@@ -101,6 +108,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         status.removeCallbacks(blink)
         BridgeService.onStatus = null
         BridgeService.onTruck = null
+        BridgeService.capture = null
         ClusterNav.paused(this)
         BridgeService.onVideoActive = null
         super.onPause()
@@ -134,6 +142,28 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     @Deprecated("Back gesture; this app has no AndroidX")
     override fun onBackPressed() { if (!settingsPanel.close()) super.onBackPressed() }
+
+    /**
+     * The video comes from PixelCopy (a SurfaceView isn't in the normal drawing), then every other
+     * view is drawn over it. Drawing the SurfaceView itself would clear the video, so it's skipped.
+     */
+    private fun screenshot(done: (ByteArray?) -> Unit) {
+        if (root.width == 0) return done(null)
+        val shot = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+        val c = Canvas(shot).apply { drawColor(Color.BLACK) }
+        fun finish(video: Bitmap?) {
+            video?.let { c.drawBitmap(it, surface.left.toFloat(), surface.top.toFloat(), null) }
+            for (i in 0 until root.childCount) {
+                val v = root.getChildAt(i)
+                if (v === surface || v.visibility != View.VISIBLE) continue
+                c.save(); c.translate(v.left.toFloat(), v.top.toFloat()); v.draw(c); c.restore()
+            }
+            done(ByteArrayOutputStream().also { shot.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray())
+        }
+        if (BridgeService.instance?.video == null || !surface.holder.surface.isValid || surface.width == 0) return finish(null)
+        val video = Bitmap.createBitmap(surface.width, surface.height, Bitmap.Config.ARGB_8888)
+        PixelCopy.request(surface, video, { r -> finish(video.takeIf { r == PixelCopy.SUCCESS }) }, Handler(Looper.getMainLooper()))
+    }
 
     // ---- video surface ----
 

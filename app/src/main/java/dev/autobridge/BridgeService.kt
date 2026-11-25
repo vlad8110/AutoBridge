@@ -46,6 +46,8 @@ class BridgeService : Service() {
         /** The truck bar's text (null: the truck shares nothing); also delivered to [onTruck]. */
         @Volatile var truckText: String? = null
         var onTruck: ((Truck) -> Unit)? = null
+        /** Set while AutoBridge's screen is in front: captures it as a PNG (null if it can't). */
+        var capture: ((done: (ByteArray?) -> Unit) -> Unit)? = null
         /** Latest truck values, for the bar under Android Auto. */
         @Volatile var latestTruck = Truck()
         /** Name of the phone that last connected over Bluetooth (settings page). */
@@ -389,10 +391,27 @@ class BridgeService : Service() {
                         val b = input.read()
                         if (b < 0) break
                         if (b == 'L'.code) sendLogs("phone")
+                        if (b == 'S'.code) sendScreenshot()
                     }
                 }
             } catch (_: IOException) { /* phone app gone or older; try again shortly */ }
             Thread.sleep(5000)
+        }
+    }
+
+    /** The phone app's screenshot button: AutoBridge's screen as the driver sees it, saved next to the logs. */
+    private fun sendScreenshot() {
+        val ip = phoneIp ?: return
+        val grab = capture ?: return say("Screenshot: AutoBridge isn't on the truck's screen")
+        main.post {
+            grab { png ->
+                if (png == null) return@grab say("Screenshot failed")
+                thread(name = "ab-shot") {
+                    val name = Logs.name("screen").removeSuffix(".txt") + ".png"
+                    try { Logs.send(ip, carIp(), name, png); say("Screenshot saved on the phone: $name") }
+                    catch (e: IOException) { say("Screenshot not sent: ${e.message}") }
+                }
+            }
         }
     }
 

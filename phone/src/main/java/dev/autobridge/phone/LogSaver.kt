@@ -54,7 +54,7 @@ object LogSaver {
         if (line() != "AUTOBRIDGE-LOG") throw IOException("not an AutoBridge log")
         val name = line()
         val size = line().toIntOrNull()
-        if (!NAME.matches(name) || !name.endsWith(".txt")) throw IOException("bad log name")
+        if (!NAME.matches(name) || !(name.endsWith(".txt") || name.endsWith(".png"))) throw IOException("bad log name")
         if (size == null || size !in 0..MAX_BYTES) throw IOException("bad log size")
         return name to size
     }
@@ -64,16 +64,18 @@ object LogSaver {
         val tree = folder(context)
         val uri = if (tree != null) {
             val parent = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
-            DocumentsContract.createDocument(r, parent, "text/plain", name)
+            DocumentsContract.createDocument(r, parent, mime(name), name)
         } else {
             r.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, ContentValues().apply {
                 put(MediaStore.Downloads.DISPLAY_NAME, name)
-                put(MediaStore.Downloads.MIME_TYPE, "text/plain")
+                put(MediaStore.Downloads.MIME_TYPE, mime(name))
                 put(MediaStore.Downloads.RELATIVE_PATH, "Download/AutoBridge")
             })
         } ?: throw IOException("could not create the file")
         (r.openOutputStream(uri) ?: throw IOException("could not open the file")).use { it.write(bytes) }
     }
+
+    private fun mime(name: String) = if (name.endsWith(".png")) "image/png" else "text/plain"
 
     private fun prefs(context: Context) = context.getSharedPreferences("logs", Context.MODE_PRIVATE)
 }

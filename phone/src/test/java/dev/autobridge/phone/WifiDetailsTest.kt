@@ -25,6 +25,7 @@ class LogSaverTest {
 
     @Test fun acceptsTheCarsHeader() {
         assertEquals("autobridge-2026-11-24_17-05-31-auto.txt" to 1234, header("AUTOBRIDGE-LOG\nautobridge-2026-11-24_17-05-31-auto.txt\n1234\n"))
+        assertEquals("autobridge-2026-11-25_13-10-00-screen.png" to 99, header("AUTOBRIDGE-LOG\nautobridge-2026-11-25_13-10-00-screen.png\n99\n"))
     }
 
     @Test fun refusesAnythingElse() {
