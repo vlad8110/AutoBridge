@@ -3,15 +3,14 @@ package dev.autobridge
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
-import android.graphics.drawable.LayerDrawable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.AbsoluteSizeSpan
 import android.text.style.ForegroundColorSpan
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
@@ -23,175 +22,264 @@ import kotlin.math.roundToInt
 /** What the bar shows, worked out from [Truck] (pure, so it's unit-tested). "—" where the truck shares nothing. */
 object BarText {
     enum class Tone { NORMAL, GOOD, BAD }
-    data class Col(val value: String, val unit: String = "", val label: String, val tone: Tone = Tone.NORMAL)
-    data class Bar(val percent: String, val fill: Float, val ringLabel: String, val charging: Boolean,
-                   val cols: List<Col>, val gear: String, val gearActive: Boolean, val brake: String)
+    enum class Port { HIDDEN, PLUGGED, OPEN }
+    data class Bar(
+        val gear: String, val gearWord: String, val gearActive: Boolean,
+        val range: String, val rangeUnit: String, val energy: String,
+        val mid: String, val midUnit: String, val midLabel: String,          // speed, or time to the charge limit
+        val charging: Boolean,
+        val meterLeft: String, val meterCenter: String, val meterRight: String,
+        val meterFrom: Float, val meterTo: Float, val meterMark: Float,      // 0..1 across the meter
+        val meterTone: Tone, val power: String, val powerTone: Tone, val caption: String,
+        val brake: String, val port: Port,
+        val percent: String, val fill: Float, val batteryLabel: String,
+    )
 
     private const val NONE = "—"
+    /** kW at either end of the driving meter. */
+    private const val METER_KW = 200f
 
     fun of(t: Truck, localeMiles: Boolean): Bar {
         val miles = t.miles ?: localeMiles
-        val f = t.fahrenheit ?: localeMiles
-        val range = t.rangeM?.let { if (miles) "${(it / 1609.344f).roundToInt()} mi" else "${(it / 1000).roundToInt()} km" } ?: NONE
-        val energy = if (t.batteryWh != null) Col("${(t.batteryWh / 1000).roundToInt()}", t.capacityWh?.let { " / ${(it / 1000).roundToInt()} kWh" } ?: " kWh", "Energy")
-                     else Col(NONE, label = "Energy")
-        val kw = t.rateMw?.let { kw(abs(it)) }
-        val middle = if (t.charging) listOf(
-            Col(kw?.let { "$it kW" } ?: NONE, label = t.currentA?.let { "${it.roundToInt()} A max" } ?: "Charging", tone = Tone.GOOD),
-            Col(t.chargeSec?.let(::duration) ?: NONE, label = t.chargeLimit?.let { "to ${it.roundToInt()}%" } ?: "Time left"),
-            Col(if (t.portConnected == true) "Plugged" else "Unplugged", label = if (t.portOpen == true) "Port open" else "Port closed"),
-        ) else listOf(
-            Col(t.speedMs?.let { if (miles) "${(it * 2.23694f).roundToInt()} mph" else "${(it * 3.6f).roundToInt()} km/h" } ?: NONE, label = "Speed"),
-            Col(kw?.let { "$it kW" } ?: NONE, label = if ((t.rateMw ?: 0f) < 0f) "Regen" else "Power",
-                tone = when { t.rateMw == null || t.rateMw == 0f -> Tone.NORMAL; t.rateMw < 0f -> Tone.GOOD; else -> Tone.BAD }),
-            Col(when (t.regen) { 1 -> "Off"; 2 -> "Partial"; 3 -> "One-pedal"; else -> NONE }, label = "Regen braking"),
-        )
-        val outside = Col(t.outsideC?.let { "${(if (f) it * 9 / 5 + 32 else it).roundToInt()}°" } ?: NONE, label = "Outside")
         val gear = t.gear?.let(Truck::gearName) ?: NONE
-        return Bar(
-            percent = t.batteryPercent?.let { "$it%" } ?: NONE,
-            fill = (t.batteryPercent ?: 0) / 100f,
-            ringLabel = if (t.charging) "Charging" else "Battery",
-            charging = t.charging,
-            cols = listOf(Col(range, label = "Range"), energy) + middle + outside,
-            gear = gear, gearActive = gear != "P" && gear != NONE,
+        val kw = t.rateMw?.let { it / 1_000_000f }
+        val pct = t.batteryPercent
+        val common = Bar(
+            gear = gear,
+            gearWord = when (gear) { "P" -> "Park"; "R" -> "Reverse"; "N" -> "Neutral"; "D" -> "Drive"; NONE -> ""; else -> "Gear $gear" },
+            gearActive = gear != "P" && gear != NONE,
+            range = t.rangeM?.let { "${(if (miles) it / 1609.344f else it / 1000).roundToInt()}" } ?: NONE,
+            rangeUnit = if (miles) "mi" else "km",
+            energy = t.batteryWh?.let { "${(it / 1000).roundToInt()}" + (t.capacityWh?.let { c -> " / ${(c / 1000).roundToInt()}" } ?: "") + " kWh" } ?: "",
+            mid = NONE, midUnit = "", midLabel = "", charging = t.charging,
+            meterLeft = "", meterCenter = "", meterRight = "", meterFrom = 0f, meterTo = 0f, meterMark = -1f,
+            meterTone = Tone.GOOD, power = NONE, powerTone = Tone.NORMAL, caption = "",
             brake = when (t.parkingBrake) { true -> "On"; false -> "Off"; null -> NONE },
+            port = when { t.portConnected == true -> Port.PLUGGED; t.portOpen == true -> Port.OPEN; else -> Port.HIDDEN },
+            percent = pct?.toString() ?: NONE, fill = (pct ?: 0) / 100f, batteryLabel = if (t.charging) "Charging" else "Battery",
         )
+        return if (t.charging) common.copy(
+            mid = t.chargeSec?.let { if (it < 3600) "${(it + 59) / 60}" else String.format(java.util.Locale.US, "%.1f", it / 3600f) } ?: NONE,
+            midUnit = t.chargeSec?.let { if (it < 3600) "min" else "h" } ?: "",
+            midLabel = t.chargeLimit?.let { "to ${it.roundToInt()}%" } ?: "Time left",
+            meterLeft = "Charging", meterRight = t.currentA?.let { "${it.roundToInt()} A max" } ?: "",
+            meterFrom = 0f, meterTo = (pct ?: 0) / 100f, meterMark = t.chargeLimit?.let { it / 100f } ?: -1f,
+            power = kw?.let { number(abs(it)) } ?: NONE, powerTone = Tone.GOOD,
+            caption = t.chargeLimit?.let { "Limit ${it.roundToInt()}%" } ?: "",
+        ) else {
+            // Truck reports power positive when the battery is drained, negative when regen fills it.
+            val f = ((kw ?: 0f) / METER_KW).coerceIn(-1f, 1f) / 2
+            common.copy(
+                mid = t.speedMs?.let { "${(it * if (miles) 2.23694f else 3.6f).roundToInt()}" } ?: NONE,
+                midUnit = if (miles) "mph" else "km/h", midLabel = "Speed",
+                meterLeft = "Regen", meterCenter = "0", meterRight = "Power",
+                meterFrom = minOf(0.5f, 0.5f + f), meterTo = maxOf(0.5f, 0.5f + f), meterMark = 0.5f,
+                meterTone = if ((kw ?: 0f) < 0f) Tone.GOOD else Tone.BAD,
+                power = kw?.let { if (it < 0f) "−" + number(-it) else number(it) } ?: NONE,
+                powerTone = when { kw == null || kw == 0f -> Tone.NORMAL; kw < 0f -> Tone.GOOD; else -> Tone.BAD },
+                caption = when (t.regen) { 1 -> "Regen off"; 2 -> "Partial regen"; 3 -> "One-pedal"; else -> "" },
+            )
+        }
     }
 
     /** 8 -> "8", 7.36 -> "7.4", 62.4 -> "62" (whole kW once it's 10 or more). */
-    fun kw(mw: Float): String {
-        val k = mw / 1_000_000f
-        return if (k >= 10) "${k.roundToInt()}" else String.format(java.util.Locale.US, "%.1f", k).removeSuffix(".0")
-    }
-
-    fun duration(sec: Int): String = if (sec < 3600) "${(sec + 59) / 60} min" else "${sec / 3600} h ${(sec % 3600 + 59) / 60} min"
+    fun number(kw: Float): String = if (kw >= 10) "${kw.roundToInt()}" else String.format(java.util.Locale.US, "%.1f", kw).removeSuffix(".0")
 }
 
-/** The smoky-glass strip under Android Auto: battery ring, then one column per value, then the gear chip. */
+/**
+ * The truck bar under Android Auto, laid out like a dashboard strip: gear, range, speed, a
+ * regen-to-power meter, brake, charge port and a cell battery gauge, on dark smoky glass.
+ */
 class TruckBar(context: Context) : FrameLayout(context) {
-    private val barH = (resources.displayMetrics.heightPixels * 0.12f).roundToInt()
-    private val valuePx = barH * 0.19f
-    private val labelPx = barH * 0.085f
-    private val ring = Ring(context)
-    private val percent = text(valuePx * 1.3f, WHITE, bold = true)
-    private val ringLabel = text(labelPx, MUTED)
-    private val cols = List(7) { text(valuePx, WHITE, bold = true) to text(labelPx, MUTED) }
-    private val brake = text(labelPx * 1.2f, MUTED)
-    private val gear = text(barH * 0.3f, WHITE, bold = true).apply { gravity = Gravity.CENTER }
+    private val barH = (resources.displayMetrics.heightPixels * 0.14f).roundToInt()
+    private val big = barH * 0.25f
+    private val unit = barH * 0.1f
+    private val small = barH * 0.085f
+    private val pad = (barH * 0.08f).roundToInt()
+
+    private val gearLetter = text(big * 1.15f, WHITE, true)
+    private val gearWord = text(small, MUTED)
+    private val gearChip = chip(gearLetter, gearWord)
+    private val range = text(big, WHITE, true)
+    private val energy = text(small, MUTED)
+    private val mid = text(big, WHITE, true)
+    private val midLabel = text(small * 1.1f, MUTED)
+    private val meterLeft = text(small * 1.1f, MUTED)
+    private val meterCenter = text(small * 1.1f, MUTED)
+    private val meterRight = text(small * 1.1f, MUTED)
+    private val meter = Meter(context)
+    private val power = text(big * 0.85f, WHITE, true)
+    private val caption = text(small * 1.1f, MUTED)
+    private val brake = text(big * 0.85f, WHITE, true)
+    private val plugLabel = text(small, RED)
+    private val plug = Plug(context)
+    private val plugChip = chip(plug, plugLabel)
+    private val alert = text(small, WHITE, true).apply { text = "!"; gravity = Gravity.CENTER
+        background = GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(0xFFD93025.toInt()) } }
+    private val battery = Cells(context)
+    private val percent = text(big * 0.8f, WHITE, true)
+    private val batteryLabel = text(small * 1.1f, MUTED)
 
     init {
-        // Soft teal and violet glow behind the glass.
-        background = LayerDrawable(arrayOf(
-            GradientDrawable().apply { setColor(0xFF0F1115.toInt()) },
-            glow(0x5A1D9E75, 0.08f), glow(0x4D534AB7, 0.92f),
-        ))
-        val pad = (barH * 0.08f).roundToInt()
-        val glass = LinearLayout(context).apply {
+        setBackgroundColor(0xFF000000.toInt())  // pure black around the card; the card keeps its own color
+        val chipSize = (barH * 0.62f).roundToInt()
+        val row = LinearLayout(context).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(pad * 2, pad, pad * 2, pad)
-            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x29FFFFFF, 0x8C2C303A.toInt(), 0xB812141A.toInt())).apply {
-                cornerRadius = barH * 0.22f; setStroke(2, 0x33FFFFFF)
+            background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0x1AFFFFFF, 0xEB262C38.toInt(), 0xF5161A22.toInt())).apply {
+                cornerRadius = barH * 0.16f; setStroke(2, 0x2EFFFFFF)
             }
+            addView(gearChip, LinearLayout.LayoutParams(chipSize, chipSize))
+            gap()
+            addView(column(Gravity.START, range, text(small * 1.1f, MUTED).apply { text = "Range" }, energy))
+            gap()
+            addView(column(Gravity.CENTER, mid, midLabel))
+            gap()
             addView(LinearLayout(context).apply {
-                gravity = Gravity.CENTER
-                addView(ring, LinearLayout.LayoutParams((barH * 0.6f).roundToInt(), (barH * 0.6f).roundToInt()))
-                addView(LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL; setPadding(pad, 0, 0, 0)
-                    addView(percent); addView(ringLabel)
-                })
-            }, weight(1.5f))
-            divider()
-            column(0); column(1)
-            divider()
-            column(2); column(3); column(4)
-            divider()
-            column(5)
+                orientation = LinearLayout.VERTICAL
+                addView(spread(meterLeft, meterCenter, meterRight))
+                addView(meter, LinearLayout.LayoutParams(-1, (barH * 0.12f).roundToInt()).apply { setMargins(0, pad / 2, 0, pad / 2) })
+                addView(spread(power, View(context), caption))
+            }, LinearLayout.LayoutParams(0, -2, 1f))
+            gap()
+            addView(column(Gravity.CENTER, brake, text(small * 1.1f, MUTED).apply { text = "Brake" }))
+            gap()
+            addView(FrameLayout(context).apply {
+                addView(plugChip, LayoutParams(chipSize, chipSize).apply { setMargins(0, pad / 2, pad / 2, 0) })
+                addView(alert, LayoutParams((barH * 0.17f).roundToInt(), (barH * 0.17f).roundToInt(), Gravity.TOP or Gravity.END))
+            }, LinearLayout.LayoutParams(chipSize + pad / 2, chipSize + pad / 2))
+            gap()
             addView(LinearLayout(context).apply {
-                gravity = Gravity.CENTER
-                addView(LinearLayout(context).apply {
-                    orientation = LinearLayout.VERTICAL; gravity = Gravity.END; setPadding(0, 0, pad, 0)
-                    addView(text(labelPx, MUTED).apply { text = "Brake" }); addView(brake)
-                })
-                addView(gear, LinearLayout.LayoutParams((barH * 0.6f).roundToInt(), (barH * 0.6f).roundToInt()))
-            }, weight(1.3f))
+                orientation = LinearLayout.VERTICAL
+                addView(battery, LinearLayout.LayoutParams((barH * 1.25f).roundToInt(), (barH * 0.3f).roundToInt()))
+                addView(spread(percent, View(context), batteryLabel), LinearLayout.LayoutParams((barH * 1.25f).roundToInt(), -2))
+            })
         }
-        addView(glass, LayoutParams(-1, -1).apply { setMargins(pad * 2, pad, pad * 2, pad + pad / 2) })
+        addView(row, LayoutParams(-1, -1).apply { setMargins(pad * 2, pad, pad * 2, pad + pad / 2) })
         layoutParams = LinearLayout.LayoutParams(-1, barH)
     }
 
     fun show(t: Truck) {
         val b = BarText.of(t, java.util.Locale.getDefault().country in setOf("US", "GB", "LR", "MM"))
-        ring.fill = b.fill; ring.charging = b.charging; ring.invalidate()
-        percent.text = b.percent
-        ringLabel.text = b.ringLabel
-        b.cols.forEachIndexed { i, c ->
-            val (v, l) = cols[i]
-            v.text = SpannableStringBuilder(c.value).apply {
-                if (c.unit.isNotEmpty()) {
-                    val s = length; append(c.unit)
-                    setSpan(AbsoluteSizeSpan((labelPx * 1.3f).roundToInt()), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                    setSpan(ForegroundColorSpan(MUTED), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                }
-            }
-            v.setTextColor(when (c.tone) { BarText.Tone.GOOD -> GREEN; BarText.Tone.BAD -> RED; else -> WHITE })
-            l.text = c.label
-        }
+        gearLetter.text = b.gear; gearWord.text = b.gearWord
+        gearLetter.setTextColor(if (b.gearActive) 0xFFD2E3FC.toInt() else WHITE)
+        gearWord.setTextColor(if (b.gearActive) BLUE else MUTED)
+        gearChip.background = box(if (b.gearActive) 0x388AB4F8 else 0x14FFFFFF, if (b.gearActive) 0x808AB4F8.toInt() else 0x38FFFFFF)
+        range.text = withUnit(b.range, b.rangeUnit); energy.text = b.energy
+        mid.text = withUnit(b.mid, b.midUnit); midLabel.text = b.midLabel
+        meterLeft.text = b.meterLeft; meterCenter.text = b.meterCenter; meterRight.text = b.meterRight
+        meter.from = b.meterFrom; meter.to = b.meterTo; meter.mark = b.meterMark
+        meter.fill = if (b.meterTone == BarText.Tone.BAD) RED else GREEN; meter.invalidate()
+        power.text = withUnit(b.power, "kW"); power.setTextColor(tone(b.powerTone)); caption.text = b.caption
         brake.text = b.brake
-        gear.text = b.gear
-        gear.setTextColor(if (b.gearActive) 0xFFD2E3FC.toInt() else WHITE)
-        gear.background = GradientDrawable().apply {
-            cornerRadius = barH * 0.16f
-            setColor(if (b.gearActive) 0x478AB4F8 else 0x1AFFFFFF)
-            setStroke(2, if (b.gearActive) 0x998AB4F8.toInt() else 0x38FFFFFF)
+        val plugged = b.port == BarText.Port.PLUGGED
+        plugChip.visibility = if (b.port == BarText.Port.HIDDEN) View.INVISIBLE else View.VISIBLE
+        alert.visibility = if (b.port == BarText.Port.OPEN) View.VISIBLE else View.GONE
+        plugLabel.text = if (plugged) "Plugged" else "Open"
+        plugLabel.setTextColor(if (plugged) GREEN else RED)
+        plug.color = if (plugged) GREEN else RED; plug.invalidate()
+        plugChip.background = box(if (plugged) 0x2981C995 else 0x29F28B82, if (plugged) 0x8081C995.toInt() else 0x73F28B82)
+        battery.fill = b.fill; battery.charging = b.charging; battery.invalidate()
+        percent.text = withUnit(b.percent, "%"); batteryLabel.text = b.batteryLabel
+    }
+
+    // ---- building blocks ----
+
+    private fun withUnit(v: String, u: String) = SpannableStringBuilder(v).apply {
+        if (v != "—" && u.isNotEmpty()) {
+            val s = length; append(" $u")
+            setSpan(AbsoluteSizeSpan(unit.roundToInt()), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(ForegroundColorSpan(LIGHT), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
     }
 
-    private fun LinearLayout.column(i: Int) = addView(LinearLayout(context).apply {
-        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
-        addView(cols[i].first); addView(cols[i].second)
-    }, weight(1f))
-
-    private fun LinearLayout.divider() = addView(View(context).apply { setBackgroundColor(0x1FFFFFFF) },
-        LinearLayout.LayoutParams(2, (barH * 0.45f).roundToInt()).apply { setMargins(8, 0, 8, 0) })
-
-    private fun weight(w: Float) = LinearLayout.LayoutParams(0, -1, w)
+    private fun tone(t: BarText.Tone) = when (t) { BarText.Tone.GOOD -> GREEN; BarText.Tone.BAD -> RED; else -> WHITE }
 
     private fun text(px: Float, color: Int, bold: Boolean = false) = TextView(context).apply {
-        setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, px); setTextColor(color); maxLines = 1
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, px); setTextColor(color); maxLines = 1; includeFontPadding = false
         typeface = Typeface.create(if (bold) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
-        gravity = Gravity.CENTER
     }
 
-    private fun glow(color: Int, x: Float) = GradientDrawable().apply {
-        gradientType = GradientDrawable.RADIAL_GRADIENT; colors = intArrayOf(color, 0)
-        gradientRadius = barH * 2.2f; setGradientCenter(x, 0.5f)
+    private fun column(g: Int, vararg v: View) = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL; gravity = g or Gravity.CENTER_VERTICAL
+        v.forEachIndexed { i, view -> addView(view, LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) topMargin = pad / 2 }) }
     }
 
-    /** The battery ring; a lightning bolt in the middle while charging. */
-    private class Ring(context: Context) : View(context) {
-        var fill = 0f
-        var charging = false
-        private val track = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = 0x24FFFFFF; strokeCap = Paint.Cap.ROUND }
-        private val arc = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = GREEN; strokeCap = Paint.Cap.ROUND }
-        private val bolt = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = GREEN }
+    private fun spread(l: View, c: View, r: View) = LinearLayout(context).apply {
+        gravity = Gravity.BOTTOM
+        addView(l, LinearLayout.LayoutParams(0, -2, 1f))
+        addView(c, if (c is TextView) LinearLayout.LayoutParams(-2, -2) else LinearLayout.LayoutParams(0, 0))  // a bare View would take the whole row
+        addView(r, LinearLayout.LayoutParams(0, -2, 1f))
+        (r as? TextView)?.gravity = Gravity.END
+    }
+
+    private fun chip(top: View, word: TextView) = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+        addView(top, if (top is TextView) LinearLayout.LayoutParams(-2, -2) else LinearLayout.LayoutParams((barH * 0.26f).roundToInt(), (barH * 0.26f).roundToInt()))
+        addView(word, LinearLayout.LayoutParams(-2, -2).apply { topMargin = pad / 3 })
+    }
+
+    private fun box(fill: Int, stroke: Int) = GradientDrawable().apply { cornerRadius = barH * 0.14f; setColor(fill); setStroke(2, stroke) }
+
+    private fun LinearLayout.gap() = addView(View(context), LinearLayout.LayoutParams(pad * 3, 1))
+
+    /** Track with a fill between [from] and [to] (0..1) and a white marker at [mark]. */
+    private class Meter(c: Context) : View(c) {
+        var from = 0f; var to = 0f; var mark = -1f; var fill = GREEN
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         override fun onDraw(c: Canvas) {
-            val s = minOf(width, height).toFloat(); val w = s * 0.1f
-            track.strokeWidth = w; arc.strokeWidth = w
-            val r = RectF(w, w, s - w, s - w)
-            c.drawOval(r, track)
-            c.drawArc(r, -90f, 360f * fill, false, arc)
-            if (charging) c.drawPath(Path().apply {
-                moveTo(s * .54f, s * .26f); lineTo(s * .38f, s * .54f); lineTo(s * .5f, s * .54f)
-                lineTo(s * .45f, s * .74f); lineTo(s * .63f, s * .45f); lineTo(s * .51f, s * .45f); close()
-            }, bolt)
+            val h = height.toFloat(); val w = width.toFloat(); val r = h / 2
+            p.color = 0xFF3C4043.toInt(); c.drawRoundRect(RectF(0f, 0f, w, h), r, r, p)
+            if (to > from) { p.color = fill; c.drawRoundRect(RectF(from * w, 0f, to * w, h), r, r, p) }
+            if (mark >= 0f) { p.color = WHITE; c.drawRoundRect(RectF(mark * w - h * 0.1f, -h * 0.25f, mark * w + h * 0.1f, h * 1.25f), 2f, 2f, p) }
+        }
+    }
+
+    /** Battery with 10 cells, a terminal nub and a bolt while charging. */
+    private class Cells(c: Context) : View(c) {
+        var fill = 0f; var charging = false
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        override fun onDraw(c: Canvas) {
+            val w = width.toFloat(); val h = height.toFloat(); val nub = w * 0.04f; val bw = w - nub; val gap = h * 0.08f
+            p.color = 0xFF5F6368.toInt(); c.drawRoundRect(RectF(bw, h * 0.3f, w, h * 0.7f), 3f, 3f, p)
+            p.color = if (charging) 0x6681C995 else 0xFF3C4043.toInt(); c.drawRoundRect(RectF(0f, 0f, bw, h), h * 0.15f, h * 0.15f, p)
+            p.color = 0xFF3C4043.toInt(); if (charging) c.drawRoundRect(RectF(2f, 2f, bw - 2f, h - 2f), h * 0.13f, h * 0.13f, p)
+            val n = 10; val cw = (bw - gap * (n + 1)) / n; val lit = (fill * n).roundToInt()
+            for (i in 0 until n) {
+                p.color = if (i < lit) GREEN else 0xFF202124.toInt()
+                val x = gap + i * (cw + gap); c.drawRoundRect(RectF(x, gap, x + cw, h - gap), 3f, 3f, p)
+            }
+            if (charging) {
+                p.color = 0xFF0F1115.toInt()
+                val cx = bw / 2; val path = android.graphics.Path().apply {
+                    moveTo(cx + h * .08f, h * .12f); lineTo(cx - h * .16f, h * .55f); lineTo(cx, h * .55f)
+                    lineTo(cx - h * .08f, h * .88f); lineTo(cx + h * .16f, h * .45f); lineTo(cx, h * .45f); close()
+                }
+                c.drawPath(path, p)
+            }
+        }
+    }
+
+    /** A simple plug: body, two prongs and a cable. */
+    private class Plug(c: Context) : View(c) {
+        var color = RED
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        override fun onDraw(c: Canvas) {
+            val s = minOf(width, height).toFloat(); p.color = color
+            p.style = Paint.Style.FILL
+            c.drawRoundRect(RectF(s * .22f, s * .3f, s * .78f, s * .68f), s * .08f, s * .08f, p)
+            c.drawRect(s * .32f, s * .08f, s * .42f, s * .3f, p); c.drawRect(s * .58f, s * .08f, s * .68f, s * .3f, p)
+            p.style = Paint.Style.STROKE; p.strokeWidth = s * .09f
+            c.drawLine(s * .5f, s * .68f, s * .5f, s * .95f, p)
         }
     }
 
     private companion object {
         const val WHITE = 0xFFF1F3F4.toInt()
+        const val LIGHT = 0xFFBDC1C6.toInt()
         const val MUTED = 0xFF9AA0A6.toInt()
         const val GREEN = 0xFF81C995.toInt()
         const val RED = 0xFFF28B82.toInt()
+        const val BLUE = 0xFF8AB4F8.toInt()
     }
 }

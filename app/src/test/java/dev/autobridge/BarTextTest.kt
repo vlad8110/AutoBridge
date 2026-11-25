@@ -11,30 +11,39 @@ class BarTextTest {
 
     @Test fun chargingMatchesTheTruck() {
         val b = BarText.of(charging, localeMiles = true)
-        assertEquals("79%", b.percent)
-        assertEquals(true, b.charging)
-        assertEquals(listOf("382 mi", "164", "8 kW", "15 min", "Plugged", "73°"), b.cols.map { it.value })
-        assertEquals(listOf("Range", "Energy", "80 A max", "to 80%", "Port open", "Outside"), b.cols.map { it.label })
-        assertEquals("P", b.gear); assertEquals(false, b.gearActive); assertEquals("Off", b.brake)
+        assertEquals("P", b.gear); assertEquals("Park", b.gearWord); assertEquals(false, b.gearActive)
+        assertEquals("382", b.range); assertEquals("mi", b.rangeUnit); assertEquals("164 / 207 kWh", b.energy)
+        assertEquals("15", b.mid); assertEquals("min", b.midUnit); assertEquals("to 80%", b.midLabel)
+        assertEquals("8", b.power); assertEquals("80 A max", b.meterRight); assertEquals("Limit 80%", b.caption)
+        assertEquals(0.8f, b.meterMark, 1e-6f)
+        assertEquals(BarText.Port.PLUGGED, b.port)
+        assertEquals("79", b.percent); assertEquals("Charging", b.batteryLabel)
     }
 
-    @Test fun drivingShowsSpeedPowerAndRegen() {
-        val t = charging.copy(gear = 0x8, chargeState = 3, portConnected = false, portOpen = false, rateMw = 62_400_000f, speedMs = 20.1f)
+    @Test fun drivingShowsSpeedAndASignedMeter() {
+        val t = charging.copy(gear = 0x8, chargeState = 3, portConnected = false, portOpen = false, rateMw = -24_000_000f, speedMs = 20.1f)
         val b = BarText.of(t, localeMiles = true)
-        assertEquals(listOf("45 mph", "62 kW", "Partial"), b.cols.subList(2, 5).map { it.value })
-        assertEquals(BarText.Tone.BAD, b.cols[3].tone)
-        assertEquals("D", b.gear); assertEquals(true, b.gearActive)
-        assertEquals(BarText.Tone.GOOD, BarText.of(t.copy(rateMw = -15_000_000f), true).cols[3].tone)  // regen while driving
+        assertEquals("D", b.gear); assertEquals("Drive", b.gearWord); assertEquals(true, b.gearActive)
+        assertEquals("45", b.mid); assertEquals("mph", b.midUnit)
+        assertEquals("−24", b.power); assertEquals(BarText.Tone.GOOD, b.powerTone)  // regen
+        assertEquals(0.44f, b.meterFrom, 1e-6f); assertEquals(0.5f, b.meterTo, 1e-6f)  // 24 of 200 kW, left of centre
+        assertEquals("Partial regen", b.caption)
+        assertEquals(BarText.Port.HIDDEN, b.port)
+        val drawing = BarText.of(t.copy(rateMw = 62_400_000f), true)
+        assertEquals("62", drawing.power); assertEquals(BarText.Tone.BAD, drawing.powerTone); assertEquals(0.5f, drawing.meterFrom, 1e-6f)
+    }
+
+    @Test fun portLeftOpenWhileDrivingIsFlagged() {
+        val b = BarText.of(charging.copy(chargeState = 3, portConnected = false, portOpen = true, rateMw = 0f), true)
+        assertEquals(BarText.Port.OPEN, b.port)
     }
 
     @Test fun missingValuesShowADash() {
         val b = BarText.of(Truck(), localeMiles = false)
-        assertEquals("—", b.percent); assertEquals("—", b.gear)
-        assertEquals("—", b.cols[0].value)
+        assertEquals("—", b.percent); assertEquals("—", b.gear); assertEquals("—", b.range); assertEquals("km", b.rangeUnit)
     }
 
-    @Test fun formats() {
-        assertEquals("7.4", BarText.kw(7_360_000f)); assertEquals("8", BarText.kw(8_000_000f)); assertEquals("62", BarText.kw(62_400_000f))
-        assertEquals("15 min", BarText.duration(900)); assertEquals("1 h 20 min", BarText.duration(4800))
+    @Test fun numbers() {
+        assertEquals("7.4", BarText.number(7.36f)); assertEquals("8", BarText.number(8f)); assertEquals("62", BarText.number(62.4f))
     }
 }
