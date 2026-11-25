@@ -30,6 +30,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var panel: LinearLayout
     private lateinit var status: TextView
     private lateinit var truckBar: TruckBar
+    private lateinit var settingsPanel: SettingsPanel
     private var statusText = ""
     private var cursorOn = true
     private val blink = object : Runnable {
@@ -45,27 +46,16 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         surface = SurfaceView(this).apply { holder.addCallback(this@MainActivity) }
         // The waiting screen looks like a Linux console: monospace, coloured status tags, blinking cursor.
         status = TextView(this).apply { textSize = 20f; typeface = Typeface.MONOSPACE; setLineSpacing(8f, 1f) }
-        val settings = Button(this).apply { text = "Wi-Fi settings"; textSize = 18f; typeface = Typeface.MONOSPACE; setOnClickListener { editWifi() } }
-        val logs = Button(this).apply {
-            text = "Send logs to phone"; textSize = 18f; typeface = Typeface.MONOSPACE
-            setOnClickListener { BridgeService.instance?.sendLogs("button") ?: show("AutoBridge isn't running yet") }
-        }
+        settingsPanel = SettingsPanel(this, editWifi = ::editWifi, toast = ::show)
+        val settings = Button(this).apply { text = "Settings"; textSize = 18f; typeface = Typeface.MONOSPACE; setOnClickListener { settingsPanel.open() } }
         // The truck's data in a smoky-glass strip under Android Auto (always shown).
-        truckBar = TruckBar(this)
+        truckBar = TruckBar(this).apply { onSettings = { settingsPanel.open() } }
         panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Console.BACKGROUND)
             setPadding(64, 48, 64, 48)
             addView(status, LinearLayout.LayoutParams(-1, 0, 1f))
-            addView(LinearLayout(context).apply {
-                addView(settings); addView(logs)
-                VoiceAssistant.picker(context)?.let { picker ->
-                    addView(Button(context).apply {
-                        text = "Voice button"; textSize = 18f; typeface = Typeface.MONOSPACE
-                        setOnClickListener { show(VoiceAssistant.status(context)); runCatching { startActivity(picker) } }
-                    })
-                }
-            }, LinearLayout.LayoutParams(-2, -2))
+            addView(settings, LinearLayout.LayoutParams(-2, -2))
         }
         root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -77,11 +67,14 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             }
         }
         // Android Auto gets the area above the bar; it re-measures from root's size at the next connection.
-        setContentView(LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.BLACK)
-            addView(root, LinearLayout.LayoutParams(-1, 0, 1f))
-            addView(truckBar)
+        setContentView(FrameLayout(this).apply {
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.VERTICAL
+                setBackgroundColor(Color.BLACK)
+                addView(root, LinearLayout.LayoutParams(-1, 0, 1f))
+                addView(truckBar)
+            })
+            addView(settingsPanel, FrameLayout.LayoutParams(-1, -1))
         })
         root.setOnTouchListener(::onTouch)
         askPermissionsThenStart()
@@ -94,10 +87,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         truckBar.show(BridgeService.latestTruck)
         BridgeService.instance?.fullForeground()
         ClusterNav.resumed(this)
-        BridgeService.onVideoActive = { active -> panel.visibility = if (active) View.GONE else View.VISIBLE; fitSurface() }
+        BridgeService.onVideoActive = { active -> panel.visibility = if (active) View.GONE else View.VISIBLE; if (!active) applyBar(); fitSurface() }
         show(BridgeService.status)
         if (Settings(this).wifi() == null) show("Waiting for Wi-Fi details: open AutoBridge Phone on the truck hotspot, or set them in Wi-Fi settings.")
         panel.visibility = if (BridgeService.instance?.video != null) View.GONE else View.VISIBLE
+        if (BridgeService.instance?.video == null) applyBar()
         status.postDelayed(blink, 500)
     }
 
@@ -109,6 +103,9 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         BridgeService.onVideoActive = null
         super.onPause()
     }
+
+    /** Shows or hides the bar per the setting; only between connections, so Android Auto's shape stays right. */
+    private fun applyBar() { truckBar.visibility = if (Settings(this).barEnabled) View.VISIBLE else View.GONE }
 
     // ---- video surface ----
 

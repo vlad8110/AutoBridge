@@ -48,6 +48,8 @@ class BridgeService : Service() {
         var onTruck: ((Truck) -> Unit)? = null
         /** Latest truck values, for the bar under Android Auto. */
         @Volatile var latestTruck = Truck()
+        /** Name of the phone that last connected over Bluetooth (settings page). */
+        @Volatile var phoneName: String? = null
         const val EXTRA_BOOT = "boot"
         var onStatus: ((String) -> Unit)? = null
         var onVideoActive: ((Boolean) -> Unit)? = null
@@ -161,6 +163,7 @@ class BridgeService : Service() {
                         socket.use {
                             val wifi = prefs.wifi() ?: return@thread say("Set the Wi-Fi details in AutoBridge settings")
                             val ip = carIp() ?: return@thread say("Car Wi-Fi hotspot is off (no address found)")
+                            phoneName = it.remoteDevice.name
                             say("Phone ${it.remoteDevice.name ?: "?"} connected over Bluetooth")
                             try {
                                 Wireless.handshake(it.inputStream, it.outputStream, "127.0.0.1", wifi, Wireless.PHONE_AA_PORT,
@@ -503,6 +506,11 @@ class Settings(context: Context) {
         get() = p.getLong("hevcFailedIn", -1) == version
         set(v) = p.edit().putLong("hevcFailedIn", if (v) version else -1).apply()
     private val version = context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
+
+    /** The truck bar under Android Auto (settings page). */
+    var barEnabled: Boolean get() = p.getBoolean("bar", true); set(v) = p.edit().putBoolean("bar", v).apply()
+    /** Offer the sharper H.265 1440p picture (settings page); off forces the proven 1080p. */
+    var hevcEnabled: Boolean get() = p.getBoolean("hevc", true); set(v) = p.edit().putBoolean("hevc", v).apply()
 
     fun forget() = p.edit().remove("ssid").remove("password").remove("bssid").apply()
 

@@ -86,6 +86,6 @@ object Display {
         val h = s.viewH.takeIf { it > 0 } ?: bounds.height()
         val hevc = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { !it.isEncoder }
             .mapNotNull { runCatching { it.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_HEVC).videoCapabilities }.getOrNull() }
-        return plan(w, h, context.resources.displayMetrics.densityDpi, !s.hevcFailed) { cw, ch -> hevc.any { it.isSizeSupported(cw, ch) } }
+        return plan(w, h, context.resources.displayMetrics.densityDpi, !s.hevcFailed && s.hevcEnabled) { cw, ch -> hevc.any { it.isSizeSupported(cw, ch) } }
     }
 }

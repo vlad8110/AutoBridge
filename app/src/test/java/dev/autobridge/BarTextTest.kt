@@ -26,9 +26,9 @@ class BarTextTest {
         assertEquals("D", b.gear); assertEquals("Drive", b.gearWord); assertEquals(true, b.gearActive)
         assertEquals("45", b.mid); assertEquals("mph", b.midUnit)
         assertEquals("−24", b.power); assertEquals(BarText.Tone.GOOD, b.powerTone)  // regen
-        assertEquals(0.44f, b.meterFrom, 1e-6f); assertEquals(0.5f, b.meterTo, 1e-6f)  // 24 of 200 kW, left of centre
+        assertEquals(0.5f - kotlin.math.sqrt(24f / 200f) / 2, b.meterFrom, 1e-5f); assertEquals(0.5f, b.meterTo, 1e-6f)  // square-root scale, left of centre
         assertEquals("Partial regen", b.caption)
-        assertEquals(BarText.Port.HIDDEN, b.port)
+        assertEquals(BarText.Port.CLOSED, b.port)  // shown as Closed, not hidden
         val drawing = BarText.of(t.copy(rateMw = 62_400_000f), true)
         assertEquals("62", drawing.power); assertEquals(BarText.Tone.BAD, drawing.powerTone); assertEquals(0.5f, drawing.meterFrom, 1e-6f)
     }
@@ -41,6 +41,7 @@ class BarTextTest {
     @Test fun missingValuesShowADash() {
         val b = BarText.of(Truck(), localeMiles = false)
         assertEquals("—", b.percent); assertEquals("—", b.gear); assertEquals("—", b.range); assertEquals("km", b.rangeUnit)
+        assertEquals(BarText.Port.HIDDEN, b.port)  // the truck shares nothing about the port
     }
 
     @Test fun numbers() {
