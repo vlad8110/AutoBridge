@@ -412,8 +412,9 @@ class BridgeService : Service() {
                 "Truck: ${truckText ?: "nothing shared"}",
                 "Route: ${ClusterNav.route}, cluster ${if (ClusterNav.sink != null) "bound" else "not bound"}",
                 "Status: " + synchronized(this) { recent.joinToString(" | ") },
+                "Car permissions: ${TruckProbe.permissions(this)}",
                 "---- truck data (every value the truck lets AutoBridge read) ----",
-            ) + (runCatching { TruckProbe.dump(car!!.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager) }.getOrElse { listOf("no car service: $it") })
+            ) + (runCatching { (car!!.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager).let { TruckProbe.dump(it) + TruckProbe.hidden(it) } }.getOrElse { listOf("no car service: $it") })
             try {
                 Logs.send(ip, carIp(), name, Logs.collect(this, reason, header))
                 say("Log saved on the phone: $name")
@@ -476,7 +477,7 @@ class BridgeService : Service() {
             val ux = car!!.getCarManager(Car.CAR_UX_RESTRICTION_SERVICE) as CarUxRestrictionsManager
             moving = ux.currentCarUxRestrictions.isRequiresDistractionOptimization
             ux.registerListener { r -> moving = r.isRequiresDistractionOptimization; pushSensors() }
-            watchTruck(car!!.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager)
+            (car!!.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager).let { watchTruck(it); TruckProbe.record(it) }
         }.onFailure { Log.w(TAG, "no car service; reporting parked", it) }
     }
 
