@@ -19,6 +19,8 @@ object Wireless {
     // connects out to the relay on PHONE_CAR_PORT. Must match phone/.../RelayService.kt.
     const val PHONE_AA_PORT = 5280  // the phone may remember this port for the truck from earlier SierraLink use
     const val PHONE_CAR_PORT = 5300
+    /** The phone app saves logs the car sends here. Must match LogReceiver in the phone app. */
+    const val PHONE_LOG_PORT = 5301
 
     const val START_REQUEST = 1
     const val INFO_REQUEST = 2

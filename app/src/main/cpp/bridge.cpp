@@ -23,6 +23,15 @@
 #include <aasdk/Channel/MediaSource/Audio/MicrophoneAudioChannel.hpp>
 #include <aasdk/Channel/InputSource/InputSourceService.hpp>
 #include <aasdk/Channel/SensorSource/SensorSourceService.hpp>
+#include <aasdk/Channel/MediaPlaybackStatus/MediaPlaybackStatusService.hpp>
+#include <aasdk/Channel/Channel.hpp>
+#include <aasdk/Messenger/MessageId.hpp>
+#include <aap_protobuf/service/navigationstatus/NavigationStatusMessageId.pb.h>
+#include <aap_protobuf/service/navigationstatus/message/NavigationStatus.pb.h>
+#include <aap_protobuf/service/navigationstatus/message/NavigationState.pb.h>
+#include <aap_protobuf/service/navigationstatus/message/NavigationCurrentPosition.pb.h>
+#include <aap_protobuf/service/navigationstatus/message/NavigationNextTurnEvent.pb.h>
+#include <aap_protobuf/service/navigationstatus/message/NavigationNextTurnDistanceEvent.pb.h>
 #include <aap_protobuf/service/control/message/AuthResponse.pb.h>
 #include <aap_protobuf/service/control/message/ServiceDiscoveryResponse.pb.h>
 #include <aap_protobuf/service/inputsource/message/InputReport.pb.h>
@@ -54,6 +63,7 @@ class Session;
 struct Listener {
     jobject obj = nullptr;
     jmethodID onVideo, onAudio, onAudioState, onMic, onVideoFocus, onEnded;
+    jmethodID onNowPlaying, onPlayback, onNavStatus, onNavStep, onNavLegacyTurn, onNavDistance;
     JNIEnv *env = nullptr;
 
     void bind(JNIEnv *e, jobject l) {
@@ -65,6 +75,41 @@ struct Listener {
         onMic = e->GetMethodID(c, "onMic", "(Z)V");
         onVideoFocus = e->GetMethodID(c, "onVideoFocus", "(Z)V");
         onEnded = e->GetMethodID(c, "onEnded", "(Ljava/lang/String;)V");
+        onNowPlaying = e->GetMethodID(c, "onNowPlaying", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[BI)V");
+        onPlayback = e->GetMethodID(c, "onPlayback", "(II)V");
+        onNavStatus = e->GetMethodID(c, "onNavStatus", "(I)V");
+        onNavStep = e->GetMethodID(c, "onNavStep", "(IILjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V");
+        onNavLegacyTurn = e->GetMethodID(c, "onNavLegacyTurn", "(IIILjava/lang/String;)V");
+        onNavDistance = e->GetMethodID(c, "onNavDistance", "(IIIIIIIILjava/lang/String;)V");
+    }
+    jstring str(const std::string &v, bool has) { return has ? env->NewStringUTF(v.c_str()) : nullptr; }
+    void drop(std::initializer_list<jobject> refs) { for (auto r : refs) if (r) env->DeleteLocalRef(r); }
+    void nowPlaying(const std::string *song, const std::string *artist, const std::string *album, const std::string *art, int durationSec) {
+        jstring a = song ? str(*song, true) : nullptr, b = artist ? str(*artist, true) : nullptr, c = album ? str(*album, true) : nullptr;
+        jbyteArray d = nullptr;
+        if (art && !art->empty()) {
+            d = env->NewByteArray((jsize) art->size());
+            env->SetByteArrayRegion(d, 0, (jsize) art->size(), reinterpret_cast<const jbyte *>(art->data()));
+        }
+        env->CallVoidMethod(obj, onNowPlaying, a, b, c, d, durationSec);
+        drop({a, b, c, d});
+    }
+    void playback(int state, int positionSec) { env->CallVoidMethod(obj, onPlayback, state, positionSec); }
+    void navStatus(int status) { env->CallVoidMethod(obj, onNavStatus, status); }
+    void navStep(int type, int exit, const std::string &road, const std::string &cue, const std::string &dest) {
+        jstring a = str(road, !road.empty()), b = str(cue, !cue.empty()), c = str(dest, !dest.empty());
+        env->CallVoidMethod(obj, onNavStep, type, exit, a, b, c);
+        drop({a, b, c});
+    }
+    void navLegacyTurn(int event, int side, int exit, const std::string &road) {
+        jstring a = str(road, !road.empty());
+        env->CallVoidMethod(obj, onNavLegacyTurn, event, side, exit, a);
+        drop({a});
+    }
+    void navDistance(int m, int e3, int unit, int sec, int destM, int destE3, int destUnit, int destSec, const std::string &road) {
+        jstring a = str(road, !road.empty());
+        env->CallVoidMethod(obj, onNavDistance, m, e3, unit, sec, destM, destE3, destUnit, destSec, a);
+        drop({a});
     }
     jbyteArray bytes(const DataConstBuffer &b) {
         jbyteArray a = env->NewByteArray((jsize) b.size);
@@ -341,6 +386,8 @@ struct Input : Base, aasdk::channel::inputsource::IInputSourceServiceEventHandle
         svc->set_id((int) ch->getId());
         // The touch panel is the visible area (video frame minus the cropped margins);
         // Android Auto maps touches onto its UI area, not the whole frame.
+        // Steering-wheel media keys, passed on from the truck's media buttons (NowPlaying.kt).
+        for (int k : {85, 87, 88, 126, 127}) svc->mutable_input_source_service()->add_keycodes_supported(k);
         auto *t = svc->mutable_input_source_service()->add_touchscreen();
         t->set_width(s.cfg.codecW - s.cfg.marginW);
         t->set_height(s.cfg.codecH - s.cfg.marginH);
@@ -359,6 +406,123 @@ struct Input : Base, aasdk::channel::inputsource::IInputSourceServiceEventHandle
     void onChannelError(const Error &e) override { fail(e); }
 };
 
+// ---- Now playing: song, artist, art and position, for the truck's media card and dashboard ----
+struct NowPlaying : Base, aasdk::channel::mediaplaybackstatus::IMediaPlaybackStatusServiceEventHandler, std::enable_shared_from_this<NowPlaying> {
+    std::shared_ptr<aasdk::channel::mediaplaybackstatus::MediaPlaybackStatusService> ch;
+    NowPlaying(Session &s) : Base(s, "now playing"), ch(std::make_shared<aasdk::channel::mediaplaybackstatus::MediaPlaybackStatusService>(s.strand, s.messenger)) {}
+
+    void fill(ctl::ServiceDiscoveryResponse &r) {
+        auto *svc = r.add_channels();
+        svc->set_id((int) ch->getId());
+        svc->mutable_media_playback_service();
+    }
+    void onChannelOpenRequest(const ctl::ChannelOpenRequest &) override { openResponse(s, ch); ch->receive(shared_from_this()); }
+    void onMetadataUpdate(const aap_protobuf::service::mediaplayback::message::MediaPlaybackMetadata &m) override {
+        s.listener.nowPlaying(m.has_song() ? &m.song() : nullptr, m.has_artist() ? &m.artist() : nullptr,
+                              m.has_album() ? &m.album() : nullptr, m.has_album_art() ? &m.album_art() : nullptr,
+                              m.has_duration_seconds() ? (int) m.duration_seconds() : -1);
+        ch->receive(shared_from_this());
+    }
+    void onPlaybackUpdate(const aap_protobuf::service::mediaplayback::message::MediaPlaybackStatus &p) override {
+        s.listener.playback(p.has_state() ? (int) p.state() : -1, p.has_playback_seconds() ? (int) p.playback_seconds() : -1);
+        ch->receive(shared_from_this());
+    }
+    void onChannelError(const Error &e) override { fail(e); }
+};
+
+// ---- Turn-by-turn, for the truck's cluster (ClusterNav.kt) ----
+// Our own channel: aasdk's NavigationStatusService drops the newer NavigationState and
+// CurrentPosition messages, which current Android Auto sends instead of the old turn events.
+namespace nav = aap_protobuf::service::navigationstatus;
+struct NavChannel : aasdk::channel::Channel, std::enable_shared_from_this<NavChannel> {
+    NavChannel(boost::asio::io_service::strand &st, aasdk::messenger::IMessenger::Pointer m)
+        : Channel(st, std::move(m), ChannelId::NAVIGATION_STATUS) {}
+};
+static int e3(const std::string &v) { char *end; double d = strtod(v.c_str(), &end); return end == v.c_str() ? -1 : (int) (d * 1000 + 0.5); }
+
+struct Navigation : Base, std::enable_shared_from_this<Navigation> {
+    std::shared_ptr<NavChannel> ch;
+    Navigation(Session &s) : Base(s, "navigation"), ch(std::make_shared<NavChannel>(s.strand, s.messenger)) {}
+
+    void fill(ctl::ServiceDiscoveryResponse &r) {
+        auto *svc = r.add_channels();
+        svc->set_id((int) ch->getId());
+        auto *n = svc->mutable_navigation_status_service();
+        n->set_minimum_interval_ms(1000);
+        n->set_type(nav::NavigationStatusService::ENUM);  // turn types, not pictures: GM's cluster draws its own arrows
+    }
+    void receive() {
+        auto p = aasdk::messenger::ReceivePromise::defer(s.strand);
+        auto self = shared_from_this();
+        p->then([self](aasdk::messenger::Message::Pointer m) { self->handle(*m); self->receive(); },
+                [self](const Error &e) { self->fail(e); });
+        s.messenger->enqueueReceive(ch->getId(), std::move(p));
+    }
+    void handle(aasdk::messenger::Message &m) {
+        aasdk::messenger::MessageId id(m.getPayload());
+        DataConstBuffer b(m.getPayload(), id.getSizeOf());
+        switch (id.getId()) {
+            case ctl::ControlMessageType::MESSAGE_CHANNEL_OPEN_REQUEST: {
+                ctl::ChannelOpenResponse r;
+                r.set_status(aap_protobuf::shared::STATUS_SUCCESS);
+                auto msg = std::make_shared<aasdk::messenger::Message>(ch->getId(), aasdk::messenger::EncryptionType::ENCRYPTED,
+                                                                         aasdk::messenger::MessageType::CONTROL);
+                msg->insertPayload(aasdk::messenger::MessageId(ctl::ControlMessageType::MESSAGE_CHANNEL_OPEN_RESPONSE).getData());
+                msg->insertPayload(r);
+                ch->send(std::move(msg), promise());
+                break;
+            }
+            case nav::INSTRUMENT_CLUSTER_NAVIGATION_STATUS: {
+                nav::message::NavigationStatus st;
+                if (st.ParseFromArray(b.cdata, b.size)) s.listener.navStatus(st.status());
+                break;
+            }
+            case nav::INSTRUMENT_CLUSTER_NAVIGATION_STATE: {
+                nav::message::NavigationState st;
+                if (!st.ParseFromArray(b.cdata, b.size) || st.steps_size() == 0) break;
+                auto &step = st.steps(0);
+                std::string cue = step.has_cue() && step.cue().alternate_text_size() ? step.cue().alternate_text(0) : "";
+                std::string dest = st.destinations_size() ? st.destinations(0).address() : "";
+                s.listener.navStep(step.maneuver().type(), step.maneuver().roundabout_exit_number(), step.road().name(), cue, dest);
+                break;
+            }
+            case nav::INSTRUMENT_CLUSTER_NAVIGATION_CURRENT_POSITION: {
+                nav::message::NavigationCurrentPosition p;
+                if (!p.ParseFromArray(b.cdata, b.size)) break;
+                auto &sd = p.step_distance();
+                int destM = -1, destE3 = -1, destUnit = 0, destSec = -1;
+                if (p.destination_distances_size()) {
+                    auto &d = p.destination_distances(0);
+                    destM = d.distance().has_meters() ? d.distance().meters() : -1;
+                    destE3 = d.distance().has_display_value() ? e3(d.distance().display_value()) : -1;
+                    destUnit = d.distance().display_units();
+                    destSec = d.has_time_to_arrival_seconds() ? (int) d.time_to_arrival_seconds() : -1;
+                }
+                s.listener.navDistance(sd.distance().has_meters() ? sd.distance().meters() : -1,
+                                       sd.distance().has_display_value() ? e3(sd.distance().display_value()) : -1,
+                                       sd.distance().display_units(), sd.has_time_to_step_seconds() ? (int) sd.time_to_step_seconds() : -1,
+                                       destM, destE3, destUnit, destSec, p.current_road().name());
+                break;
+            }
+            case nav::INSTRUMENT_CLUSTER_NAVIGATION_TURN_EVENT: {
+                nav::message::NavigationNextTurnEvent t;
+                if (t.ParseFromArray(b.cdata, b.size))
+                    s.listener.navLegacyTurn(t.event(), t.turn_side(), t.turn_number(), t.road());
+                break;
+            }
+            case nav::INSTRUMENT_CLUSTER_NAVIGATION_DISTANCE_EVENT: {
+                nav::message::NavigationNextTurnDistanceEvent d;
+                if (d.ParseFromArray(b.cdata, b.size))
+                    s.listener.navDistance(d.distance_meters(), d.has_display_distance_e3() ? d.display_distance_e3() : -1,
+                                           d.display_distance_unit(), d.time_to_turn_seconds(), -1, -1, 0, -1, "");
+                break;
+            }
+            default:
+                LOG("navigation: message %d ignored", id.getId());
+        }
+    }
+};
+
 // ---- Sensors: driving status (required by Android Auto) and night mode ----
 struct Sensors : Base, aasdk::channel::sensorsource::ISensorSourceServiceEventHandler, std::enable_shared_from_this<Sensors> {
     std::shared_ptr<aasdk::channel::sensorsource::SensorSourceService> ch;
@@ -370,6 +534,11 @@ struct Sensors : Base, aasdk::channel::sensorsource::ISensorSourceServiceEventHa
         auto *src = svc->mutable_sensor_source_service();
         src->add_sensors()->set_sensor_type(sensor::SENSOR_DRIVING_STATUS_DATA);
         src->add_sensors()->set_sensor_type(sensor::SENSOR_NIGHT_MODE);
+        // An EV that charges on J1772, CCS1 and (with the owner's adapter) Tesla NACS, so Maps can pick chargers.
+        src->add_supported_fuel_types(sensor::FUEL_TYPE_ELECTRIC);
+        src->add_supported_ev_connector_types(sensor::EV_CONNECTOR_TYPE_J1772);
+        src->add_supported_ev_connector_types(sensor::EV_CONNECTOR_TYPE_COMBO_1);
+        src->add_supported_ev_connector_types(sensor::EV_CONNECTOR_TYPE_TESLA_SUPERCHARGER);
         if (s.offered[0]) src->add_sensors()->set_sensor_type(sensor::SENSOR_SPEED);
         if (s.offered[1]) src->add_sensors()->set_sensor_type(sensor::SENSOR_GEAR);
         if (s.offered[2]) src->add_sensors()->set_sensor_type(sensor::SENSOR_PARKING_BRAKE);
@@ -488,6 +657,8 @@ static Session *start(JNIEnv *env, int fd, const Config &cfg, const jint *truck,
     auto mic = std::make_shared<Mic>(*s);
     auto in = std::make_shared<Input>(*s);
     auto sens = std::make_shared<Sensors>(*s);
+    auto playing = std::make_shared<NowPlaying>(*s);
+    auto navigation = std::make_shared<Navigation>(*s);
     auto control = std::make_shared<Control>(*s);
 
     s->videoChannel = video->ch;
@@ -500,8 +671,10 @@ static Session *start(JNIEnv *env, int fd, const Config &cfg, const jint *truck,
         mic->fill(r);
         in->fill(r);
         sens->fill(r);
+        playing->fill(r);
+        navigation->fill(r);
     };
-    s->keep = {video, mic, in, sens, control};
+    s->keep = {video, mic, in, sens, playing, navigation, control};
     for (auto &a : audios) s->keep.push_back(a);
 
     s->strand.dispatch([=] {
@@ -510,6 +683,8 @@ static Session *start(JNIEnv *env, int fd, const Config &cfg, const jint *truck,
         mic->ch->receive(mic);
         in->ch->receive(in);
         sens->ch->receive(sens);
+        playing->ch->receive(playing);
+        navigation->receive();
         control->start();
     });
     s->thread = std::thread([s] { s->run(); });
@@ -593,6 +768,21 @@ JNIEXPORT void JNICALL Java_dev_autobridge_Native_sensors(JNIEnv *env, jobject, 
         std::copy(t.begin(), t.end(), s->truck);
         s->sendSensors();
     });
+}
+
+JNIEXPORT void JNICALL Java_dev_autobridge_Native_key(JNIEnv *, jobject, jlong h, jint keycode) {
+    auto *s = (Session *) h;
+    input::InputReport report;
+    report.set_timestamp(std::chrono::duration_cast<std::chrono::microseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count());
+    auto *k = report.mutable_key_event();
+    for (bool down : {true, false}) {
+        auto *key = k->add_keys();
+        key->set_keycode(keycode);
+        key->set_down(down);
+        key->set_metastate(0);
+    }
+    s->strand.dispatch([s, report] { if (s->inputReady) s->inputChannel->sendInputReport(report, ::promise(*s, "key")); });
 }
 
 JNIEXPORT void JNICALL Java_dev_autobridge_Native_videoFocus(JNIEnv *, jobject, jlong h, jboolean projected) {

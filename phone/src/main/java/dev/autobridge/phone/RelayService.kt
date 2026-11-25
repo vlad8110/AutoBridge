@@ -25,6 +25,7 @@ class RelayService : Service() {
     companion object {
         const val AA_PORT = 5280   // must match Wireless.PHONE_AA_PORT in the car app
         const val CAR_PORT = 5300  // must match Wireless.PHONE_CAR_PORT in the car app
+        const val LOG_PORT = 5301  // must match Wireless.PHONE_LOG_PORT in the car app
         @Volatile var status = "Starting…"
         var onStatus: ((String) -> Unit)? = null
 
@@ -50,6 +51,7 @@ class RelayService : Service() {
         // Must be IPv4 127.0.0.1: the address the car hands Android Auto. getLoopbackAddress() is ::1 on Android.
         listen("Android Auto", InetSocketAddress(InetAddress.getByName("127.0.0.1"), AA_PORT)) { offer(aa = it) }
         listen("car", InetSocketAddress(CAR_PORT)) { offer(car = it) }
+        listen("car log", InetSocketAddress(LOG_PORT)) { s -> thread { saveLog(s) } }
         say("Ready. Waiting for the car.")
     }
 
@@ -91,6 +93,17 @@ class RelayService : Service() {
         }
         say("Android Auto is running through the car")
         pipe(pair.first, pair.second)
+    }
+
+    private fun saveLog(s: Socket) = s.use {
+        try {
+            it.soTimeout = 15_000
+            val name = LogSaver.receive(this, it.getInputStream())
+            it.getOutputStream().write('K'.code)  // tells the car it's saved
+            say("Saved the car's log: $name")
+        } catch (e: IOException) {
+            say("Couldn't save the car's log: ${e.message}")
+        }
     }
 
     private fun pipe(a: Socket, b: Socket) {

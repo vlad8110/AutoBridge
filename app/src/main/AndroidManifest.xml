@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-feature android:name="android.hardware.type.automotive" android:required="true" />
     <uses-feature android:name="android.hardware.bluetooth" android:required="true" />
     <uses-feature android:name="android.hardware.wifi" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- Google's Templates Host carries our turn-by-turn to GM's cluster; without it that part just stays off. -->
+    <uses-feature android:name="android.software.car.templates_host" android:required="false" />
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
@@ -16,6 +19,11 @@
     <uses-permission android:name="android.car.permission.CAR_ENERGY" />
     <uses-permission android:name="android.car.permission.CAR_POWERTRAIN" />
     <uses-permission android:name="android.car.permission.CAR_INFO" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Cluster turn-by-turn (ClusterNav): NavigationManager, and bringing AutoBridge back after the bootstrap flash. -->
+    <uses-permission android:name="androidx.car.app.NAVIGATION_TEMPLATES" />
+    <uses-permission android:name="androidx.car.app.ACCESS_SURFACE" />
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
@@ -39,6 +47,44 @@
             <!-- Android Auto applies its own driving rules from the driving status we report. -->
             <meta-data android:name="distractionOptimized" android:value="true" />
         </activity>
+
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Media source: the truck's Media card, GM's dashboard and the steering-wheel keys (NowPlaying). -->
+        <service android:name=".MediaService" android:exported="true">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+            <!-- Opens AutoBridge's own screen from the Media card instead of a browse list. -->
+            <meta-data android:name="androidx.car.app.launchable" android:value="true" />
+        </service>
+        <meta-data android:name="com.android.automotive" android:resource="@xml/automotive_app_desc" />
+
+        <!-- Cluster turn-by-turn (ClusterNav). The Templates Host binds the service only after this
+             activity has opened once; it lives in its own hidden task. -->
+        <activity
+            android:name="androidx.car.app.activity.CarAppActivity"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity="dev.autobridge.templates"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            tools:replace="android:exported,android:launchMode,android:theme">
+            <meta-data android:name="distractionOptimized" android:value="true" />
+        </activity>
+        <service android:name=".ClusterNavService" android:exported="true">
+            <intent-filter>
+                <action android:name="androidx.car.app.CarAppService" />
+                <category android:name="androidx.car.app.category.NAVIGATION" />
+                <category android:name="androidx.car.app.category.FEATURE_CLUSTER" />
+            </intent-filter>
+        </service>
+        <meta-data android:name="androidx.car.app.minCarApiLevel" android:value="6" />
 
         <service
             android:name=".BridgeService"

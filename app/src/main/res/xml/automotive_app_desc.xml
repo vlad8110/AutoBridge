@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A media app, so the truck lists AutoBridge as a media source (Media card, dashboard, steering-wheel keys). -->
+<automotiveApp>
+    <uses name="media" />
+</automotiveApp>

@@ -23,16 +23,16 @@ data class Truck(
         rangeM?.roundToInt() ?: UNKNOWN,
     )
 
-    /** One line for the waiting screen, or null when the truck shares nothing. */
+    /** The big bar on the waiting screen, or null when the truck shares nothing. */
     fun line(miles: Boolean): String? {
         val parts = listOfNotNull(
-            batteryPercent?.let { "battery $it%" },
-            rangeM?.let { if (miles) "range ${(it / 1609.344f).roundToInt()} mi" else "range ${(it / 1000).roundToInt()} km" },
-            gear?.let(::gearName)?.let { "gear $it" },
-            parkingBrake?.let { "parking brake ${if (it) "on" else "off"}" },
+            batteryPercent?.let { "$it%" },
+            rangeM?.let { if (miles) "${(it / 1609.344f).roundToInt()} mi" else "${(it / 1000).roundToInt()} km" },
+            gear?.let(::gearName),
+            parkingBrake?.let { "brake ${if (it) "on" else "off"}" },
             speedMs?.let { if (miles) "${(it * 2.23694f).roundToInt()} mph" else "${(it * 3.6f).roundToInt()} km/h" },
         )
-        return if (parts.isEmpty()) null else "Truck: " + parts.joinToString(" · ")
+        return if (parts.isEmpty()) null else parts.joinToString("  ·  ")
     }
 
     companion object {

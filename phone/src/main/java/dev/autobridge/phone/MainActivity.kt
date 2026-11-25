@@ -4,6 +4,9 @@ import android.Manifest
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
+import android.content.Intent
+import android.net.Uri
+import android.provider.DocumentsContract
 import android.content.pm.PackageManager
 import android.net.wifi.WifiManager
 import android.os.Build
@@ -22,6 +25,7 @@ import android.widget.Toast
 class MainActivity : Activity() {
     private lateinit var wifiText: TextView
     private lateinit var statusText: TextView
+    private lateinit var logText: TextView
     private var details: WifiDetails? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -31,6 +35,8 @@ class MainActivity : Activity() {
         statusText = label(15f)
         val refresh = Button(this).apply { text = "Refresh Wi-Fi details"; setOnClickListener { showWifi() } }
         val copy = Button(this).apply { text = "Copy Wi-Fi details"; setOnClickListener { copyWifi() } }
+        logText = label(15f)
+        val pick = Button(this).apply { text = "Choose log folder"; setOnClickListener { pickFolder() } }
         setContentView(ScrollView(this).apply {
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -43,6 +49,9 @@ class MainActivity : Activity() {
                 addView(copy, LinearLayout.LayoutParams(-1, -2).apply { topMargin = 24 })
                 addView(label(22f).apply { text = "Relay" })
                 addView(statusText)
+                addView(label(22f).apply { text = "Logs from the truck" })
+                addView(logText)
+                addView(pick)
                 addView(label(14f).apply { text = "Leave this installed; it starts by itself when the phone boots." })
             })
         })
@@ -61,6 +70,7 @@ class MainActivity : Activity() {
         RelayService.onStatus = { s -> runOnUiThread { statusText.text = s } }
         statusText.text = RelayService.status
         showWifi()
+        showLogFolder()
     }
 
     override fun onPause() {
@@ -84,6 +94,25 @@ class MainActivity : Activity() {
             }
         }
     }
+
+    private fun showLogFolder() {
+        val folder = LogSaver.folder(this)?.let { DocumentsContract.getTreeDocumentId(it).substringAfter(':').ifEmpty { "(storage root)" } }
+        logText.text = "Saved to: " + (folder ?: "Download/AutoBridge — tap below and choose Phone Sync") +
+            (LogSaver.lastSaved?.let { "\nLast: $it" } ?: "")
+    }
+
+    private fun pickFolder() = startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE), PICK_FOLDER)
+
+    @Deprecated("Activity result API needs AndroidX; this app has none")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        val uri: Uri = data?.data?.takeIf { requestCode == PICK_FOLDER && resultCode == RESULT_OK } ?: return
+        contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        LogSaver.setFolder(this, uri)
+        showLogFolder()
+    }
+
+    private companion object { const val PICK_FOLDER = 2 }
 
     private fun copyWifi() {
         val d = details ?: return Toast.makeText(this, "No Wi-Fi details to copy yet", Toast.LENGTH_SHORT).show()

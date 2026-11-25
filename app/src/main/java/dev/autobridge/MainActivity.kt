@@ -29,6 +29,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var surface: SurfaceView
     private lateinit var panel: LinearLayout
     private lateinit var status: TextView
+    private lateinit var truckBar: TextView
     private var statusText = ""
     private var cursorOn = true
     private val blink = object : Runnable {
@@ -45,12 +46,22 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         // The waiting screen looks like a Linux console: monospace, coloured status tags, blinking cursor.
         status = TextView(this).apply { textSize = 20f; typeface = Typeface.MONOSPACE; setLineSpacing(8f, 1f) }
         val settings = Button(this).apply { text = "Wi-Fi settings"; textSize = 18f; typeface = Typeface.MONOSPACE; setOnClickListener { editWifi() } }
+        val logs = Button(this).apply {
+            text = "Send logs to phone"; textSize = 18f; typeface = Typeface.MONOSPACE
+            setOnClickListener { BridgeService.instance?.sendLogs("button") ?: show("AutoBridge isn't running yet") }
+        }
+        // The truck's battery, range, gear and brake, big enough to read at a glance.
+        truckBar = TextView(this).apply {
+            textSize = 56f; typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD); setTextColor(Console.TRUCK)
+            setPadding(0, 24, 0, 0); visibility = View.GONE
+        }
         panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Console.BACKGROUND)
             setPadding(64, 48, 64, 48)
             addView(status, LinearLayout.LayoutParams(-1, 0, 1f))
-            addView(settings, LinearLayout.LayoutParams(-2, -2))
+            addView(LinearLayout(context).apply { addView(settings); addView(logs) }, LinearLayout.LayoutParams(-2, -2))
+            addView(truckBar, LinearLayout.LayoutParams(-1, -2))
         }
         root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -69,6 +80,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     override fun onResume() {
         super.onResume()
         BridgeService.onStatus = { show(it) }
+        BridgeService.onTruck = ::showTruck
+        showTruck(BridgeService.truckText)
+        BridgeService.instance?.fullForeground()
+        ClusterNav.resumed(this)
         BridgeService.onVideoActive = { active -> panel.visibility = if (active) View.GONE else View.VISIBLE; fitSurface() }
         show(BridgeService.status)
         if (Settings(this).wifi() == null) show("First, enter your car's Wi-Fi hotspot details.")
@@ -79,8 +94,15 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     override fun onPause() {
         status.removeCallbacks(blink)
         BridgeService.onStatus = null
+        BridgeService.onTruck = null
+        ClusterNav.paused(this)
         BridgeService.onVideoActive = null
         super.onPause()
+    }
+
+    private fun showTruck(text: String?) {
+        truckBar.text = text
+        truckBar.visibility = if (text == null) View.GONE else View.VISIBLE
     }
 
     // ---- video surface ----

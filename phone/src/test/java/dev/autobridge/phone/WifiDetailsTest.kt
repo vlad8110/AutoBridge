@@ -19,3 +19,18 @@ class WifiDetailsTest {
         assertEquals("Network (SSID): MyTruck\nBSSID: 02:1a:2b:3c:4d:5e\nChannel: 48 (5 GHz, 5240 MHz)", d.asText())
     }
 }
+
+class LogSaverTest {
+    private fun header(text: String) = LogSaver.header(text.byteInputStream())
+
+    @Test fun acceptsTheCarsHeader() {
+        assertEquals("autobridge-2026-11-24_17-05-31-auto.txt" to 1234, header("AUTOBRIDGE-LOG\nautobridge-2026-11-24_17-05-31-auto.txt\n1234\n"))
+    }
+
+    @Test fun refusesAnythingElse() {
+        for (bad in listOf("HELLO\nx.txt\n1\n", "AUTOBRIDGE-LOG\n../evil.txt\n1\n", "AUTOBRIDGE-LOG\nlog.apk\n1\n",
+                           "AUTOBRIDGE-LOG\nlog.txt\n999999999\n", "AUTOBRIDGE-LOG\nlog.txt\n")) {
+            assertEquals(bad, true, runCatching { header(bad) }.isFailure)
+        }
+    }
+}

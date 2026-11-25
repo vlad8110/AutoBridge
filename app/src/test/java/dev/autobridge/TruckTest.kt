@@ -14,9 +14,8 @@ class TruckTest {
     @Test fun valuesForAndroidAutoAndTheScreen() {
         val t = Truck(speedMs = 10f, gear = 0x4, parkingBrake = true, batteryWh = 100_000f, capacityWh = 200_000f, rangeM = 321_869f)
         assertArrayEquals(intArrayOf(10_000, 101, 1, 50, 321_869), t.toArray())
-        assertEquals("Truck: battery 50% · range 200 mi · gear P · parking brake on · 22 mph", t.line(miles = true))
-        assertEquals("Truck: battery 50% · range 322 km · gear P · parking brake on · 36 km/h", t.line(miles = false))
-        assertEquals(Console.Kind.INFO, Console.kind(t.line(true)!!))
+        assertEquals("50%  ·  200 mi  ·  P  ·  brake on  ·  22 mph", t.line(miles = true))
+        assertEquals("50%  ·  322 km  ·  P  ·  brake on  ·  36 km/h", t.line(miles = false))
     }
 
     @Test fun gears() {

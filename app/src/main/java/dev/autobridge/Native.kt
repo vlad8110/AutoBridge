@@ -12,6 +12,12 @@ object Native {
         fun onMic(open: Boolean)
         fun onVideoFocus(projected: Boolean)                 // false: phone asked to show the car's own UI
         fun onEnded(reason: String)
+        fun onNowPlaying(song: String?, artist: String?, album: String?, art: ByteArray?, durationSec: Int)  // null/-1: unchanged
+        fun onPlayback(state: Int, positionSec: Int)        // state: 1 stopped, 2 playing, 3 paused
+        fun onNavStatus(status: Int)                         // 0 unavailable, 1 active, 2 inactive, 3 rerouting
+        fun onNavStep(type: Int, exit: Int, road: String?, cue: String?, destination: String?)
+        fun onNavLegacyTurn(event: Int, side: Int, exit: Int, road: String?)
+        fun onNavDistance(meters: Int, e3: Int, unit: Int, sec: Int, destMeters: Int, destE3: Int, destUnit: Int, destSec: Int, currentRoad: String?)
     }
 
     /** Takes ownership of [fd], a connected TCP socket. cfg = [resolution, codecW, codecH, marginW, marginH, dpi].
@@ -22,4 +28,6 @@ object Native {
     external fun mic(handle: Long, pcm: ByteArray, length: Int)
     external fun sensors(handle: Long, moving: Boolean, night: Boolean, truck: IntArray)
     external fun videoFocus(handle: Long, projected: Boolean)
+    /** Press and release an Android key code (media keys from the steering wheel). */
+    external fun key(handle: Long, keycode: Int)
 }

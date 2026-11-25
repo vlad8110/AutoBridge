@@ -40,6 +40,10 @@ class BridgeService : Service() {
         @Volatile var instance: BridgeService? = null
         /** Latest status line for the UI; also delivered to [onStatus]. */
         @Volatile var status = "Starting…"
+        /** The truck bar's text (null: the truck shares nothing); also delivered to [onTruck]. */
+        @Volatile var truckText: String? = null
+        var onTruck: ((String?) -> Unit)? = null
+        const val EXTRA_BOOT = "boot"
         var onStatus: ((String) -> Unit)? = null
         var onVideoActive: ((Boolean) -> Unit)? = null
         /** Projection surface from MainActivity; may exist before or after the service starts. */
@@ -60,7 +64,10 @@ class BridgeService : Service() {
     private var car: Car? = null
     @Volatile private var moving = false
     @Volatile private var truck = Truck()
-    private var truckLine: String? = null
+    @Volatile private var phoneIp: String? = null
+    private var lastAutoLog = 0L
+    /** Started at boot and the screen not opened since: bring the screen up when the phone connects. */
+    @Volatile private var openScreenOnConnect = false
     @Volatile private var running = true
     private val searching = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -70,12 +77,24 @@ class BridgeService : Service() {
         super.onCreate()
         instance = this
         audio = AudioOut(getSystemService(AudioManager::class.java)) { say("The car took the speakers (another audio source started)") }
+        // At boot only connectedDevice is allowed; the screen upgrades to media + mic when it opens.
+        startForeground(1, notification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE)
+        watchDrivingState()
+        thread(name = "ab-bluetooth") { bluetoothLoop() }
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.getBooleanExtra(EXTRA_BOOT, false) == true) openScreenOnConnect = true else fullForeground()
+        return START_STICKY
+    }
+
+    /** Media playback and microphone service types; only allowed while AutoBridge's screen is open. */
+    fun fullForeground() {
+        openScreenOnConnect = false
         var types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
             types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-        startForeground(1, notification(), types)
-        watchDrivingState()
-        thread(name = "ab-bluetooth") { bluetoothLoop() }
+        runCatching { startForeground(1, notification(), types) }.onFailure { Log.w(TAG, "foreground upgrade refused", it) }
     }
 
     override fun onDestroy() {
@@ -143,7 +162,8 @@ class BridgeService : Service() {
             repeat(15) {
                 val socket = try { pool.invokeAny(tasks) } catch (_: java.util.concurrent.ExecutionException) { null }
                 if (socket != null) {
-                    say("Found phone at ${socket.inetAddress.hostAddress}")
+                    phoneIp = socket.inetAddress.hostAddress
+                    say("Found phone at $phoneIp")
                     socket.tcpNoDelay = true
                     val fd = ParcelFileDescriptor.fromSocket(socket).detachFd()  // native side owns this copy
                     socket.close()
@@ -177,9 +197,14 @@ class BridgeService : Service() {
             handle.takeIf { it != 0L }?.let { h -> Native.videoFocus(h, true) }
         }.also { d -> surface?.let { d.attach(it) } }
         audio.holdFocus()
+        NowPlaying.connected(this)
         handle = Native.start(fd, v.toArray(), truck.toArray(), Callbacks(++sessionId))
         pushSensors()
         say("Android Auto connected")
+        // Started at boot, nobody has opened the screen yet: try to bring it up for the video.
+        if (openScreenOnConnect) runCatching {
+            startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }.onFailure { Log.w(TAG, "could not open the screen by itself: $it") }
     }
 
     private fun endSession() {
@@ -188,6 +213,8 @@ class BridgeService : Service() {
         handle = 0
         if (h != 0L) Native.stop(h)
         audio.release()
+        NowPlaying.disconnected()
+        ClusterNav.phoneGone()
         decoder?.release()
         decoder = null
         video = null
@@ -200,6 +227,34 @@ class BridgeService : Service() {
         if (s != null) d.attach(s) else d.detach()
         // Asking for focus again makes the phone resend a key frame for the new decoder.
         handle.takeIf { it != 0L }?.let { Native.videoFocus(it, s != null) }
+    }
+
+    fun key(code: Int) { handle.takeIf { it != 0L }?.let { Native.key(it, code) } }
+
+    /** Saves a log file on the phone (Phone Sync folder), over the hotspot. [auto]: after a failure, at most every 2 min. */
+    fun sendLogs(reason: String, auto: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (auto && now - lastAutoLog < 120_000) return
+        if (auto) lastAutoLog = now
+        val ip = phoneIp ?: return say("No phone found yet, so logs can't be sent")
+        thread(name = "ab-logs") {
+            val name = Logs.name(reason)
+            val s = Settings(this)
+            val header = listOf(
+                "Reason: $reason",
+                "Hotspot: ${s.ssid} / ${s.bssid}, car ${carIp()}, phone $ip",  // never the password
+                "Video: ${video?.let { "${it.codecW}x${it.codecH}" } ?: "not connected"}",
+                "Truck: ${truckText ?: "nothing shared"}",
+                "Route: ${ClusterNav.route}, cluster ${if (ClusterNav.sink != null) "bound" else "not bound"}",
+                "Screen: " + synchronized(this) { recent.joinToString(" | ") },
+            )
+            try {
+                Logs.send(ip, carIp(), name, Logs.collect(this, reason, header))
+                say("Log saved on the phone: $name")
+            } catch (e: IOException) {
+                say("Couldn't send the log to the phone: ${e.message}")
+            }
+        }
     }
 
     fun touch(action: Int, index: Int, ids: IntArray, xs: IntArray, ys: IntArray) {
@@ -222,8 +277,22 @@ class BridgeService : Service() {
             }
         }
         override fun onEnded(reason: String) {
-            main.post { if (id == sessionId) { endSession(); say("Disconnected: $reason") } }
+            main.post {
+                if (id == sessionId) {
+                    endSession()
+                    say("Disconnected: $reason")
+                    if (reason != "phone disconnected") sendLogs("auto", auto = true)
+                }
+            }
         }
+        override fun onNowPlaying(song: String?, artist: String?, album: String?, art: ByteArray?, durationSec: Int) =
+            NowPlaying.metadata(song, artist, album, art, durationSec)
+        override fun onPlayback(state: Int, positionSec: Int) = NowPlaying.playback(state, positionSec)
+        override fun onNavStatus(status: Int) = ClusterNav.status(status)
+        override fun onNavStep(type: Int, exit: Int, road: String?, cue: String?, destination: String?) = ClusterNav.step(type, exit, road, cue, destination)
+        override fun onNavLegacyTurn(event: Int, side: Int, exit: Int, road: String?) = ClusterNav.legacyTurn(event, side, exit, road)
+        override fun onNavDistance(meters: Int, e3: Int, unit: Int, sec: Int, destMeters: Int, destE3: Int, destUnit: Int, destSec: Int, currentRoad: String?) =
+            ClusterNav.distance(meters, e3, unit, sec, destMeters, destE3, destUnit, destSec, currentRoad)
     }
 
     // ---- car state ----
@@ -255,7 +324,7 @@ class BridgeService : Service() {
                 }
                 pushSensors()
                 val line = truck.line(miles = java.util.Locale.getDefault().country in setOf("US", "GB"))
-                if (line != truckLine) { truckLine = line; publish() }
+                if (line != truckText) { truckText = line; main.post { onTruck?.invoke(line) } }
             }
             override fun onErrorEvent(propertyId: Int, zone: Int) {}
         }
@@ -280,11 +349,7 @@ class BridgeService : Service() {
         Log.i(TAG, text)
         recent.addLast(text)
         if (recent.size > 6) recent.removeFirst()
-        publish()
-    }
-
-    @Synchronized private fun publish() {
-        val all = (recent + listOfNotNull(truckLine)).joinToString("\n")
+        val all = recent.joinToString("\n")
         status = all
         main.post { onStatus?.invoke(all) }
     }
