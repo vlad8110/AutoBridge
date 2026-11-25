@@ -78,6 +78,9 @@ class BridgeService : Service() {
     @Volatile private var openScreenOnConnect = false
     private var watchingGps = false
     @Volatile private var running = true
+    // Closed in onDestroy so threads blocked on them end: a stopped copy left listening took the phone's next connection.
+    @Volatile private var btServer: java.io.Closeable? = null
+    @Volatile private var logLine: Socket? = null
     private val searching = java.util.concurrent.atomic.AtomicBoolean(false)
 
     override fun onBind(intent: Intent?) = null
@@ -137,6 +140,8 @@ class BridgeService : Service() {
 
     override fun onDestroy() {
         running = false
+        runCatching { btServer?.close() }
+        runCatching { logLine?.close() }
         endSession()
         car?.disconnect()
         instance = null
@@ -156,9 +161,12 @@ class BridgeService : Service() {
         while (running) {
             try {
                 adapter.listenUsingRfcommWithServiceRecord("AutoBridge", UUID.fromString(Wireless.UUID)).use { server ->
+                    btServer = server
+                    if (!running) return  // stopped while we were opening it
                     if (btDownSince != 0L) { Log.i(TAG, "Bluetooth back after ${(System.currentTimeMillis() - btDownSince) / 1000} s"); btDownSince = 0L }
                     say("Waiting for phone over Bluetooth…")
                     val socket = server.accept()
+                    if (!running) { socket.close(); return }
                     thread(name = "ab-handshake") {
                         socket.use {
                             val wifi = prefs.wifi() ?: return@thread say("Set the Wi-Fi details in AutoBridge settings")
@@ -173,6 +181,7 @@ class BridgeService : Service() {
                     }
                 }
             } catch (e: IOException) {
+                if (!running) return  // onDestroy closed the listener
                 // One line per outage, not a stack trace every 2 s: a parked truck's Bluetooth can be off for
                 // hours, and those traces pushed everything else out of the log.
                 if (btDownSince == 0L) { btDownSince = System.currentTimeMillis(); Log.w(TAG, "Bluetooth not ready (${e.message}); retrying quietly") }
@@ -263,6 +272,7 @@ class BridgeService : Service() {
     // ---- session ----
 
     private fun startSession(fd: Int) {
+        if (!running) { ParcelFileDescriptor.adoptFd(fd).close(); return }  // this copy was stopped meanwhile
         endSession()
         val plan = Display.config(this)
         val v = plan.main
@@ -318,6 +328,7 @@ class BridgeService : Service() {
             if (ip == null) { Thread.sleep(5000); continue }
             try {
                 Socket().use { s ->
+                    logLine = s
                     carIp()?.let { s.bind(InetSocketAddress(it, 0)) }
                     s.connect(InetSocketAddress(ip, Wireless.PHONE_LOG_REQUEST_PORT), 3000)
                     s.keepAlive = true
