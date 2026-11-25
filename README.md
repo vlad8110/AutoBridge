@@ -1,75 +1,144 @@
 # AutoBridge
 
-Wireless Android Auto on cars that run Android Automotive OS (built and tested for a GMC Sierra EV).
-AutoBridge is a small app you install on the car. Your phone's own Android Auto connects to it over
-Bluetooth and the car's Wi-Fi hotspot, and the Android Auto screen shows full screen on the car display.
+Wireless Android Auto for cars that run **Android Automotive OS** (Google built-in), built and
+daily-driven on a **2025 GMC Sierra EV**. Cars like this dropped Android Auto; AutoBridge brings it
+back as an ordinary app, with no changes to the car and no root.
 
-It does one thing: Android Auto, wirelessly. No CarPlay, no USB.
+Two small apps work together:
 
-It needs a tiny relay app on the phone (`phone/`), because GM's hotspot blocks connections from
-the phone to the car. Android Auto connects to the relay on its own phone, the car connects out to
-the relay, and the relay joins the two.
+| App | Runs on | Where to get it |
+|---|---|---|
+| **AutoBridge** (`app/`, package `dev.autobridge.car`) | the truck | Google Play (testers) or build it yourself |
+| **AutoBridge Phone** (`phone/`, package `dev.autobridge.phone`) | your Android phone | build it yourself, or the APK from the maintainer |
+
+The phone app is a tiny relay. GM's hotspot blocks the phone from connecting to the truck, so
+Android Auto talks to the relay on its own phone and the truck connects out to the relay.
+
+## What you get
+
+- **Wireless Android Auto**, full screen above a truck data bar, connecting in about a second.
+- **Sharp picture**: 1440p (H.265) on big screens, falling back to 1080p by itself if needed.
+- **Truck integration**: turn-by-turn in GM's instrument cluster, now playing on the dashboard
+  and Media card, steering-wheel media keys, the truck's GPS for Maps, EV plug types
+  (J1772, CCS1, Tesla NACS) for charger search, and the voice button for Google Assistant.
+- **Truck bar** under Android Auto: gear, range, energy, speed, a regen/power meter, parking
+  brake, charge port, and battery. While charging it shows charging power, time to your charge
+  limit, and the current limit. It uses the truck's own units (miles, °F).
+- **Logs** sent to your phone with one tap, for troubleshooting.
+- Starts with the truck, and keeps the truck's real driving state, so Android Auto's driving
+  restrictions stay on.
+
+## Requirements
+
+- A car with Android Automotive OS and Google Play (tested: GMC Sierra EV, Android 14).
+- An Android phone with Android Auto (tested: Galaxy Z Fold8).
+- The car's **Wi-Fi hotspot turned on**. It doesn't need a data plan: the phone uses its own data.
+
+## Set up (once per truck)
+
+1. **Turn on the truck's hotspot** and join it from your phone with its password.
+2. **Install AutoBridge Phone** on the phone and open it. Allow Location (Android only shows Wi-Fi
+   details with it) and Notifications. It starts by itself after reboots from then on.
+3. **Install AutoBridge** on the truck and open it. Allow Nearby devices, Microphone, Location, and
+   the car data permissions (speed, energy, mileage, tires, steering).
+4. **Give the truck its hotspot details**, either way:
+   - *Automatic:* in AutoBridge Phone, tap **Password** in the Truck hotspot card and type the
+     hotspot password. The truck picks up the name, BSSID and password within about 10 seconds.
+   - *By hand:* on the truck, open **Settings** and tap **Edit** under Truck hotspot. AutoBridge
+     Phone shows the name, BSSID, channel and frequency to copy.
+5. **Pair the phone with the truck over Bluetooth.** In the truck's Bluetooth settings for the
+   phone, keep **Calls on** and turn **Media audio off**. Otherwise the truck's own Bluetooth player
+   grabs the speakers and Android Auto's music goes silent.
+6. That's it. With AutoBridge open, the phone's Android Auto connects by itself.
+
+## Everyday use
+
+- **Settings:** tap the **charge-port chip** on the truck bar. It's deliberately unmarked, so only
+  you know it's a button. With the bar turned off, use the **Settings** button on AutoBridge's
+  waiting screen (shown when Android Auto isn't connected). Close with **Close** or the back gesture.
+  - *Truck bar*, *Truck status bar* and *Sharper picture* switches. These apply at the next phone
+    connection, because Android Auto measures the screen when it connects.
+  - Hotspot details (Edit, Forget), the voice button setting, Send log, version.
+- **Voice button:** a long press usually reaches the phone's assistant over Bluetooth. For a short
+  press, choose *AutoBridge* as the truck's digital assistant (Settings, Voice button). That replaces
+  the truck's own Google Assistant while it's selected.
+- **Logs:** in AutoBridge Phone, tap **Send log from truck** while Android Auto is running, or use
+  Send log in Settings. Logs are saved to the folder you pick in AutoBridge Phone. A log is also
+  sent automatically when Android Auto disconnects with an error.
+
+## Troubleshooting
+
+| What you see | What to do |
+|---|---|
+| Stuck on "Looking for the AutoBridge Phone app" | Open AutoBridge Phone once; check the phone is on the truck's hotspot. |
+| Music plays but no sound | Truck Bluetooth settings for the phone: Media audio **off**. |
+| Picture stretched after changing a setting or updating | Disconnect and reconnect once. |
+| Black picture with the sharper picture on | It falls back to 1080p by itself on the next connection; or switch Sharper picture off. |
+| Anything else | Send a log and open an issue with it. Logs contain your hotspot name and BSSID, never the password. |
 
 ## How it works
 
 ```
-Phone (Android Auto)                         Car (AutoBridge)
-  │  1. Bluetooth RFCOMM  ───────────────►  "I'm at 10.x.x.x:5288, join Wi-Fi <ssid>/<password>/<bssid>"
-  │  2. joins the car's Wi-Fi hotspot
-  │  3. Android Auto → relay on the phone (127.0.0.1:5280)
-  │     car finds the relay on the hotspot and connects to it (:5300); relay joins the two
-  │                                          aasdk: version, TLS handshake, service discovery
-  │  4. H.264 video, PCM audio  ─────────►  MediaCodec → screen, AudioTrack → car speakers
-  │  ◄─────────── touch, microphone, driving status, night mode
+Phone (Android Auto)                           Truck (AutoBridge)
+  1. Bluetooth RFCOMM  ◄────────────────────►  "join Wi-Fi <ssid>/<password>/<bssid>; Android Auto at 127.0.0.1:5280"
+  2. joins the truck's hotspot
+  3. Android Auto → AutoBridge Phone (127.0.0.1:5280)
+                         ◄── truck finds the relay on the hotspot and connects out (:5300)
+  4. Android Auto session (aasdk: TLS, H.265/H.264 video, audio, touch, mic, sensors,
+     now playing, turn-by-turn)
 ```
 
-| File | What it does |
-|------|--------------|
-| `Wireless.kt` | The Bluetooth handshake: tells the phone our address and the Wi-Fi credentials |
-| `BridgeService.kt` | Foreground service: Bluetooth listener, TCP server, session, car driving state |
-| `bridge.cpp` | The Android Auto session on top of [aasdk](https://github.com/opencardev/aasdk) |
-| `Media.kt` | Video decoder, audio output with car audio focus, microphone |
-| `Display.kt` | Picks the stream size and margins so the picture fits the car screen exactly |
-| `MainActivity.kt` | Full-screen projection, touch forwarding, Wi-Fi settings |
+| Port on the phone | Used for |
+|---|---|
+| 5280 (loopback) | Android Auto → relay |
+| 5300 | truck → relay (the Android Auto session) |
+| 5301 / 5302 | log files / "send log" requests |
+| 5303 | a new truck asking for the hotspot details |
 
-Driving restrictions stay on: AutoBridge reports the car's real driving state to the phone
-(from Android Automotive's UX restrictions), so Android Auto locks the keyboard while moving.
+| Code | What it does |
+|---|---|
+| `app/.../Wireless.kt` | Bluetooth handshake and the Wi-Fi details message |
+| `app/.../BridgeService.kt` | Service: Bluetooth, finding the phone, session, truck data, logs |
+| `app/src/main/cpp/bridge.cpp` | The Android Auto session on [aasdk](https://github.com/opencardev/aasdk) |
+| `app/.../Media.kt`, `Display.kt` | Video decoding and sizing, audio, microphone |
+| `app/.../TruckBar.kt`, `SettingsPanel.kt` | The truck bar and the settings page |
+| `app/.../NowPlaying.kt`, `ClusterNav*.kt`, `VoiceAssistant.kt` | Media source, cluster turn-by-turn, voice button |
+| `phone/` | The relay, log saving, and the Wi-Fi details screen |
 
-## Build
+## Build it yourself
 
-Needs the Android SDK with NDK 28.2 and CMake 3.22.1, JDK 17, and on the first build about 10 minutes for the native libraries.
+Needs JDK 17, the Android SDK with NDK 28.2 and CMake 3.22.1. The first build compiles OpenSSL,
+protobuf and Boost for Android (about 10 minutes).
 
 ```bash
 git clone --recurse-submodules https://github.com/vlad8110/AutoBridge.git
 cd AutoBridge
-native/build-deps.sh                 # OpenSSL, protobuf, abseil, Boost headers for Android arm64
-./gradlew :app:assembleDebug         # car app: app/build/outputs/apk/debug/app-debug.apk
-./gradlew :phone:assembleDebug       # phone relay: phone/build/outputs/apk/debug/phone-debug.apk
+native/build-deps.sh
+./gradlew :app:assembleDebug :phone:assembleDebug
 ```
 
-Release bundle for Google Play, signed with your upload key:
+- Car app: `app/build/outputs/apk/debug/app-debug.apk`. Most cars only install apps from Google
+  Play, so you'll usually publish your build to your own Play Console internal-testing track.
+- Phone app: `phone/build/outputs/apk/debug/phone-debug.apk`; install it on the phone directly.
+
+Signed release builds read the key from environment variables, so no secret lives in the repo:
 
 ```bash
 AB_KEYSTORE=/path/upload.jks AB_KEYSTORE_PASSWORD=... \
-  ./gradlew :app:bundleRelease -PversionCode=2 -PversionName=0.2.0
+  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=30 -PversionName=0.4.5
 ```
 
-## Set up in the car
+Tests: `./gradlew :app:testDebugUnitTest :phone:testDebugUnitTest`.
 
-1. Turn on the car's Wi-Fi hotspot and connect the phone to it. AutoBridge Phone shows the hotspot's name,
-   BSSID and channel (with a Copy button); you only need to know the password yourself.
-2. Open AutoBridge, allow Nearby devices and Microphone, tap **Wi-Fi settings** and enter those three values.
-3. Install AutoBridge Phone on the phone and open it once (it then starts by itself after reboots).
-4. Pair your phone with the car over Bluetooth (once). In the car's Bluetooth settings for the phone, keep
-   **Calls on** (call audio uses the car's hands-free) and turn **Media audio off**. Otherwise the car's own
-   Bluetooth music player takes the speakers and Android Auto music stops or goes silent.
-5. With AutoBridge open, the phone's Android Auto connects by itself.
+## Safety and limits
 
-## Not included (on purpose)
-
-USB/wired, CarPlay, instrument-cluster display, phone call audio over Android Auto (calls use the car's
-normal Bluetooth hands-free), and starting at car boot (open AutoBridge once; it stays running while the car sleeps).
+- Android Auto's own driving restrictions stay on: AutoBridge reports the truck's real driving
+  state. Don't change that.
+- GM can change what third-party apps may do in a software update; features may stop working.
+- Not included: wired (USB) Android Auto, CarPlay, and the map on the driver display.
 
 ## License
 
-GPL-3.0, because it links aasdk (GPL-3.0). Android Auto is a trademark of Google LLC; this project is not affiliated with Google.
+GPL-3.0, because it uses [aasdk](https://github.com/opencardev/aasdk) (GPL-3.0). Android Auto is a
+trademark of Google LLC, and GMC and Sierra are trademarks of General Motors. This project is not
+affiliated with or endorsed by Google or General Motors. Use it at your own risk.
