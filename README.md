@@ -56,9 +56,10 @@ Android Auto talks to the relay on its own phone and the truck connects out to t
 
 - **Settings:** tap the **charge door icon** on the truck bar. It's deliberately unmarked, so only
   you know it's a button. With the bar turned off, use the **Settings** button on AutoBridge's
-  waiting screen (shown when Android Auto isn't connected). Close with **Close** or the back gesture.
-  - *Truck bar*, *Truck status bar* and *Sharper picture* switches. Android Auto only measures the
-    screen when it connects, so when you close settings after changing one, AutoBridge closes and
+  waiting screen (shown when Android Auto isn't connected). **Android Auto** (or the back gesture)
+  returns to Android Auto; **Exit** stops AutoBridge and closes it until you open it again.
+  - *Truck bar*, *Truck status bar* and *Sharper picture* tiles. Android Auto only measures the
+    screen when it connects, so when you go back after changing one, AutoBridge closes and
     reopens by itself and the phone reconnects at the new size.
   - Hotspot details (Edit, Forget), the voice button setting, Send log, version.
 - **Voice button:** a long press usually reaches the phone's assistant over Bluetooth. For a short
@@ -127,7 +128,7 @@ Signed release builds read the key from environment variables, so no secret live
 
 ```bash
 AB_KEYSTORE=/path/upload.jks AB_KEYSTORE_PASSWORD=... \
-  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=31 -PversionName=0.4.6
+  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=32 -PversionName=0.4.7
 ```
 
 Tests: `./gradlew :app:testDebugUnitTest :phone:testDebugUnitTest`.

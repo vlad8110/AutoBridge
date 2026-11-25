@@ -1,69 +1,101 @@
 package dev.autobridge
 
 import android.content.Context
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Typeface
+import android.text.SpannableStringBuilder
+import android.text.Spanned
+import android.text.style.StyleSpan
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
-import android.widget.Switch
 import android.widget.TextView
+import kotlin.math.roundToInt
 
 /**
- * AutoBridge settings, shown over Android Auto when the owner taps the bar's port chip (or the
- * waiting screen's Settings button). Android Auto keeps running underneath.
+ * AutoBridge settings, shown over Android Auto when the owner taps the bar's charge door (or the
+ * waiting screen's Settings button). Black and boxy like the truck's own screens: the Sierra on the
+ * left with Android Auto / Exit, the settings as tiles and buttons on the right.
  */
-class SettingsPanel(context: Context, private val editWifi: () -> Unit, private val toast: (String) -> Unit, private val onShapeChanged: () -> Unit) : FrameLayout(context) {
+class SettingsPanel(
+    context: Context,
+    private val editWifi: () -> Unit,
+    private val toast: (String) -> Unit,
+    private val onShapeChanged: () -> Unit,
+    private val onExit: () -> Unit,
+) : FrameLayout(context) {
     private val s = Settings(context)
-    /** Set when a switch changed Android Auto's shape; applied (with a restart if connected) on Close. */
+    /** Set when a tile changed Android Auto's shape; applied (with a restart if connected) on close. */
     private var shapeChanged = false
-    private val hotspot = text(18f)
-    private val hotspotDetail = text(13f, MUTED, mono = true)
-    private val about = text(18f)
-    private val aboutDetail = text(13f, MUTED)
-    private val voiceDetail = text(13f, MUTED)
+    /** Sizes are taken from the 2012 px wide mockup and scaled to this screen. */
+    private val k = resources.displayMetrics.widthPixels / 2012f
+
+    private val phone = fact(); private val version = fact(); private val picture = fact(); private val battery = fact()
+    private val hotspot = text(40f)
+    private val hotspotDetail = text(26f, MUTED, mono = true)
+    private val voiceDetail = text(26f, MUTED)
+    private val tiles = mutableListOf<() -> Unit>()
 
     init {
-        setBackgroundColor(0xFF000000.toInt())
+        setBackgroundColor(BLACK)
         isClickable = true  // nothing underneath gets the touches
         visibility = GONE
-        val page = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(32), dp(24), dp(32), dp(24))
+        val hero = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(px(40), px(56), px(40), px(44))
+            background = TruckBar.chamfer(BLACK, OUTLINE, px(44).toFloat())
+            addView(text(26f, MUTED).apply { text = "AUTOBRIDGE"; letterSpacing = 0.25f })
+            addView(ImageView(context).apply { setImageResource(R.drawable.sierra_truck); adjustViewBounds = true },
+                LinearLayout.LayoutParams(px(740), -2).apply { topMargin = px(60) })
+            addView(text(84f, light = true).apply {
+                text = SpannableStringBuilder("SIERRA EV").apply { setSpan(StyleSpan(Typeface.BOLD), 0, 6, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+                letterSpacing = 0.26f
+            }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(50) })
+            addView(text(26f, MUTED).apply { text = "WIRELESS ANDROID AUTO"; letterSpacing = 0.25f }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(10) })
+            addView(View(context).apply { setBackgroundColor(0xFF2A2D31.toInt()) }, LinearLayout.LayoutParams(-1, px(2)).apply { topMargin = px(80) })
             addView(LinearLayout(context).apply {
-                gravity = Gravity.CENTER_VERTICAL
-                addView(text(26f, bold = true).apply { text = "AutoBridge settings" }, LinearLayout.LayoutParams(0, -2, 1f))
-                addView(button("Close") { close() })  // not bare `visibility`: inside apply{} that was the header row
-            })
-            section("Display")
-            addView(card(
-                toggle("Truck bar", "Battery, range, speed and power under Android Auto. AutoBridge restarts to apply it when you close settings.", s.barEnabled) { s.barEnabled = it; shapeChanged = true },
-                toggle("Truck status bar", "The truck's own bar at the top (time, phone, notifications). Off gives Android Auto that space; swipe down from the top to see it. AutoBridge restarts to apply it when you close settings.", s.statusBarShown) { s.statusBarShown = it; shapeChanged = true },
-                toggle("Sharper picture", "1440p (H.265); falls back to 1080p by itself. AutoBridge restarts to apply it when you close settings.", s.hevcEnabled) { s.hevcEnabled = it; shapeChanged = true },
-            ))
-            section("Truck hotspot")
-            addView(card(
-                row(hotspot, hotspotDetail),
-                LinearLayout(context).apply {
-                    setPadding(dp(16), 0, dp(16), dp(14))
-                    addView(button("Edit") { editWifi() })
-                    addView(button("Forget") { s.forget(); refresh(); toast("Hotspot details forgotten") }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(10) })
-                },
-            ))
-            section("Phone")
-            addView(card(
-                row(text(18f).apply { text = "Voice button" }, voiceDetail, button("Change") {
-                    VoiceAssistant.picker(context)?.let { runCatching { context.startActivity(it) } } ?: toast("This truck has no assistant setting")
-                }),
-                row(text(18f).apply { text = "Send log to phone" }, text(13f, MUTED).apply { text = "Saved in your log folder" }, button("Send") {
-                    BridgeService.instance?.sendLogs("settings") ?: toast("AutoBridge isn't running yet")
-                }),
-            ))
-            section("About")
-            addView(card(row(about, aboutDetail)))
+                addView(facts("PHONE", phone, "PICTURE", picture), LinearLayout.LayoutParams(0, -2, 1f))
+                addView(facts("VERSION", version, "BATTERY", battery), LinearLayout.LayoutParams(0, -2, 1f))
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(28) })
+            addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
+            addView(button("ANDROID AUTO", primary = true) { close() }, LinearLayout.LayoutParams(-1, px(120)))
+            addView(button("EXIT") { onExit() }, LinearLayout.LayoutParams(-1, px(120)).apply { topMargin = px(22) })
         }
-        addView(ScrollView(context).apply { addView(page) })
+        val right = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            header("DISPLAY", first = true)
+            addView(LinearLayout(context).apply {
+                addView(tile(Glyph.BAR, "Truck bar", "Battery, range, speed and power under Android Auto", { s.barEnabled }) { s.barEnabled = it }, LinearLayout.LayoutParams(0, px(440), 1f))
+                addView(tile(Glyph.STATUS, "Truck status bar", "Time, phone and alerts at the top. Off gives Android Auto the space", { s.statusBarShown }) { s.statusBarShown = it },
+                    LinearLayout.LayoutParams(0, px(440), 1f).apply { marginStart = px(22) })
+                addView(tile(Glyph.HD, "Sharper picture", "1440p (H.265), drops to 1080p by itself", { s.hevcEnabled }) { s.hevcEnabled = it },
+                    LinearLayout.LayoutParams(0, px(440), 1f).apply { marginStart = px(22) })
+            })
+            addView(text(26f, MUTED).apply { text = "Changing these restarts AutoBridge when you go back to Android Auto, so it fits the new size." },
+                LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(22) })
+            header("TRUCK HOTSPOT")
+            addView(row(hotspot, hotspotDetail, button("EDIT") { editWifi() }, button("FORGET") { s.forget(); refresh(); toast("Hotspot details forgotten") }))
+            header("PHONE")
+            addView(LinearLayout(context).apply {
+                addView(row(text(40f).apply { text = "Voice button" }, voiceDetail, button("CHANGE") {
+                    VoiceAssistant.picker(context)?.let { runCatching { context.startActivity(it) } } ?: toast("This truck has no assistant setting")
+                }), LinearLayout.LayoutParams(0, -2, 1f))
+                addView(row(text(40f).apply { text = "Send log" }, text(26f, MUTED).apply { text = "Saved on the phone" }, button("SEND") {
+                    BridgeService.instance?.sendLogs("settings") ?: toast("AutoBridge isn't running yet")
+                }), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = px(22) })
+            })
+        }
+        addView(LinearLayout(context).apply {
+            setPadding(px(64), px(90), px(64), px(40))
+            addView(hero, LinearLayout.LayoutParams(px(820), -1))
+            addView(ScrollView(context).apply { isFillViewport = true; addView(right) }, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = px(56) })
+        }, LayoutParams(-1, -1))
     }
 
     fun open() { refresh(); visibility = VISIBLE }
@@ -75,50 +107,105 @@ class SettingsPanel(context: Context, private val editWifi: () -> Unit, private 
     }
 
     private fun refresh() {
+        tiles.forEach { it() }
         hotspot.text = s.ssid.ifEmpty { "Not set" }
         hotspotDetail.text = if (s.bssid.isEmpty()) "Tap Edit, or open AutoBridge Phone on the hotspot" else "${s.bssid} · password ${if (s.password.isEmpty()) "missing" else "saved"}"
         voiceDetail.text = VoiceAssistant.status(context).removePrefix("Voice button: ").replaceFirstChar { it.uppercase() }
-        val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
-        about.text = "AutoBridge $version"
-        val phone = BridgeService.phoneName
-        aboutDetail.text = (phone ?: "No phone yet") + if (BridgeService.instance?.video != null) " · Android Auto connected" else ""
+        version.text = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "—"
+        val video = BridgeService.instance?.video
+        phone.text = BridgeService.phoneName ?: "No phone yet"
+        phone.setTextColor(if (video != null) GREEN else WHITE)  // green while Android Auto is connected
+        picture.text = video?.let { "${it.codecH}p" } ?: "Not connected"
+        val b = BarText.of(BridgeService.latestTruck, java.util.Locale.getDefault().country in setOf("US", "GB", "LR", "MM"))
+        battery.text = "${b.percent}% · ${b.range} ${b.rangeUnit}"
     }
 
-    // ---- building blocks, in the truck's button style ----
+    // ---- building blocks, in the truck's boxy style ----
 
-    private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
+    private fun px(v: Int) = (v * k).roundToInt()
 
-    private fun text(sp: Float, color: Int = WHITE, bold: Boolean = false, mono: Boolean = false) = TextView(context).apply {
-        textSize = sp; setTextColor(color)
-        typeface = when { mono -> Typeface.MONOSPACE; bold -> Typeface.create("sans-serif-medium", Typeface.NORMAL); else -> Typeface.create("sans-serif", Typeface.NORMAL) }
+    private fun text(size: Float, color: Int = WHITE, mono: Boolean = false, light: Boolean = false) = TextView(context).apply {
+        setTextSize(TypedValue.COMPLEX_UNIT_PX, size * k); setTextColor(color)
+        typeface = when { mono -> Typeface.MONOSPACE; light -> Typeface.create("sans-serif-light", Typeface.NORMAL); else -> Typeface.create("sans-serif", Typeface.NORMAL) }
     }
 
-    private fun LinearLayout.section(title: String) = addView(text(13f, MUTED).apply { text = title; setPadding(dp(2), dp(22), 0, dp(8)) })
+    private fun fact() = text(40f)
 
-    private fun card(vararg rows: View) = LinearLayout(context).apply {
+    private fun facts(k1: String, v1: TextView, k2: String, v2: TextView) = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        background = TruckBar.chamfer(0xFF181C24.toInt(), 0xFF5F6368.toInt(), dp(14).toFloat())
-        rows.forEach { addView(it) }
+        addView(text(22f, MUTED).apply { text = k1; letterSpacing = 0.14f }); addView(v1)
+        addView(text(22f, MUTED).apply { text = k2; letterSpacing = 0.14f }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(30) }); addView(v2)
     }
 
-    private fun row(title: TextView, detail: TextView, action: View? = null) = LinearLayout(context).apply {
-        gravity = Gravity.CENTER_VERTICAL; setPadding(dp(16), dp(14), dp(16), dp(14))
+    private fun LinearLayout.header(title: String, first: Boolean = false) =
+        addView(text(28f, MUTED).apply { text = title; letterSpacing = 0.22f }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(if (first) 0 else 52); bottomMargin = px(22) })
+
+    private fun row(title: TextView, detail: TextView, vararg actions: View) = LinearLayout(context).apply {
+        gravity = Gravity.CENTER_VERTICAL; setPadding(px(40), px(52), px(40), px(52))
+        background = TruckBar.chamfer(BLACK, OUTLINE, px(24).toFloat())
         addView(LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; addView(title); addView(detail) }, LinearLayout.LayoutParams(0, -2, 1f))
-        action?.let { addView(it) }
+        actions.forEach { addView(it, LinearLayout.LayoutParams(-2, px(96)).apply { marginStart = px(24) }) }
     }
 
-    private fun toggle(title: String, detail: String, on: Boolean, set: (Boolean) -> Unit) =
-        row(text(18f).apply { text = title }, text(13f, MUTED).apply { text = detail },
-            Switch(context).apply { isChecked = on; setOnCheckedChangeListener { _, v -> set(v) } })
-
-    private fun button(label: String, onClick: () -> Unit) = text(16f).apply {
-        text = label; gravity = Gravity.CENTER; setPadding(dp(18), dp(10), dp(18), dp(10))
-        background = TruckBar.chamfer(0xFF000000.toInt(), 0xFF8E939B.toInt(), dp(8).toFloat())
+    private fun button(label: String, primary: Boolean = false, onClick: () -> Unit) = text(if (primary) 34f else 30f, if (primary) BLUE else WHITE).apply {
+        text = label; gravity = Gravity.CENTER; letterSpacing = 0.12f; minWidth = px(200); setPadding(px(34), 0, px(34), 0)
+        background = TruckBar.chamfer(if (primary) NAVY else BLACK, if (primary) BLUE else OUTLINE, px(20).toFloat())
         setOnClickListener { onClick() }
+    }
+
+    /** A square setting tile, lit blue while on; tap to switch. */
+    private fun tile(glyph: Glyph, title: String, detail: String, get: () -> Boolean, set: (Boolean) -> Unit): View {
+        val icon = GlyphView(context, glyph)
+        val state = text(24f).apply { letterSpacing = 0.12f }
+        val box = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL; setPadding(px(30), px(30), px(30), px(30))
+            addView(LinearLayout(context).apply {
+                addView(icon, LinearLayout.LayoutParams(px(130), px(130)))
+                addView(View(context), LinearLayout.LayoutParams(0, 0, 1f))
+                addView(state)
+            })
+            addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
+            addView(text(42f).apply { text = title })
+            addView(text(26f, MUTED).apply { text = detail }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(8) })
+        }
+        val paint = {
+            val on = get()
+            box.background = TruckBar.chamfer(if (on) NAVY else BLACK, if (on) BLUE else OUTLINE, px(30).toFloat())
+            state.text = if (on) "ON" else "OFF"; state.setTextColor(if (on) BLUE else MUTED)
+            icon.color = if (on) BLUE else MUTED; icon.invalidate()
+            box.contentDescription = "$title, ${if (on) "on" else "off"}"
+        }
+        tiles += paint
+        box.setOnClickListener { set(!get()); shapeChanged = true; paint() }
+        return box
+    }
+
+    private enum class Glyph { BAR, STATUS, HD }
+
+    /** The tile pictures: a screen with the bar at the bottom, the status bar at the top, or "HD". */
+    private class GlyphView(c: Context, private val glyph: Glyph) : View(c) {
+        var color = MUTED
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        override fun onDraw(c: Canvas) {
+            val u = width / 48f
+            p.color = color; p.style = Paint.Style.STROKE; p.strokeWidth = 3 * u
+            c.drawRect(RectF(4 * u, 8 * u, 44 * u, 40 * u), p)
+            p.style = Paint.Style.FILL
+            when (glyph) {
+                Glyph.BAR -> c.drawRect(8 * u, 30 * u, 40 * u, 36 * u, p)
+                Glyph.STATUS -> c.drawRect(8 * u, 12 * u, 40 * u, 17 * u, p)
+                Glyph.HD -> { p.textSize = 13 * u; p.textAlign = Paint.Align.CENTER; p.typeface = Typeface.DEFAULT_BOLD; c.drawText("HD", 24 * u, 29 * u, p) }
+            }
+        }
     }
 
     private companion object {
         const val WHITE = 0xFFF1F3F4.toInt()
         const val MUTED = 0xFF9AA0A6.toInt()
+        const val BLUE = 0xFF8AB4F8.toInt()
+        const val GREEN = 0xFF81C995.toInt()
+        const val NAVY = 0xFF0D1B2E.toInt()
+        const val BLACK = 0xFF000000.toInt()
+        const val OUTLINE = 0xFF8E939B.toInt()
     }
 }

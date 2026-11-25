@@ -46,7 +46,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         surface = SurfaceView(this).apply { holder.addCallback(this@MainActivity) }
         // The waiting screen looks like a Linux console: monospace, coloured status tags, blinking cursor.
         status = TextView(this).apply { textSize = 20f; typeface = Typeface.MONOSPACE; setLineSpacing(8f, 1f) }
-        settingsPanel = SettingsPanel(this, editWifi = ::editWifi, toast = ::show, onShapeChanged = ::shapeChanged)
+        settingsPanel = SettingsPanel(this, editWifi = ::editWifi, toast = ::show, onShapeChanged = ::shapeChanged, onExit = ::exitApp)
         val settings = Button(this).apply { text = "Settings"; textSize = 18f; typeface = Typeface.MONOSPACE; setOnClickListener { settingsPanel.open() } }
         // The truck's data in a smoky-glass strip under Android Auto (always shown).
         truckBar = TruckBar(this).apply { onSettings = { settingsPanel.open() } }
@@ -123,6 +123,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private fun shapeChanged() {
         if (BridgeService.instance?.video == null) { applyBar(); applyStatusBar(); return }
         Restart.now(this)
+    }
+
+    /** Exit in settings: stop the phone connection and close every AutoBridge screen (the cluster helper too). */
+    private fun exitApp() {
+        stopService(Intent(this, BridgeService::class.java))
+        getSystemService(android.app.ActivityManager::class.java).appTasks.forEach { runCatching { it.finishAndRemoveTask() } }
     }
 
     @Deprecated("Back gesture; this app has no AndroidX")
