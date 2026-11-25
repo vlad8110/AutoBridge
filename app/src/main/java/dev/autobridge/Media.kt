@@ -140,8 +140,15 @@ class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> U
         Stream(16000, false, AudioAttributes.USAGE_ASSISTANCE_SONIFICATION, false),
     )
 
+    /**
+     * Music plays for the whole session. Voice directions and system sounds stop between prompts:
+     * the truck's volume knob follows whatever sound is playing, so an always-open navigation
+     * stream made the knob change navigation volume instead of music.
+     */
     private class Player(s: Stream) {
         val queue = LinkedBlockingQueue<ByteArray>()
+        private val alwaysOn = s.music
+        @Volatile private var wanted = true
         private val track: AudioTrack
         private val writer: Thread
 
@@ -155,13 +162,27 @@ class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> U
                 .setAudioFormat(AudioFormat.Builder().setSampleRate(s.rate).setChannelMask(mask).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
                 .setBufferSizeInBytes(maxOf(min * 2, quarterSecond)).build().apply { play() }
             writer = Thread({
+                var playing = true
                 try {
-                    while (true) { val b = queue.take(); track.write(b, 0, b.size) }
+                    while (true) {
+                        val b = queue.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+                        if (b != null) {
+                            if (!playing) { track.play(); playing = true }
+                            track.write(b, 0, b.size)
+                        } else if (playing && !wanted && !alwaysOn) {
+                            track.stop()  // plays out what's buffered, then the truck sees this sound as finished
+                            playing = false
+                        }
+                    }
                 } catch (_: InterruptedException) {}
             }, "ab-audio").apply { priority = Thread.MAX_PRIORITY; start() }
         }
 
+        /** The phone started or stopped this stream. */
+        fun want(on: Boolean) { wanted = on }
+
         fun offer(pcm: ByteArray) {
+            wanted = true
             if (queue.size > MAX_QUEUED) queue.poll()  // over ~1 s behind: drop the oldest rather than lag
             queue.offer(pcm)
         }
@@ -190,8 +211,8 @@ class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> U
             }.build().also { audio.requestAudioFocus(it) }
     }
 
-    /** Start/stop from the phone. Players stay open between sounds; this just makes sure one exists. */
-    fun state(stream: Int, playing: Boolean) { if (playing) player(stream) }
+    /** Start/stop from the phone. Players stay open between sounds; voice and system sounds pause when stopped. */
+    fun state(stream: Int, playing: Boolean) { player(stream).want(playing) }
 
     /** Called on the connection thread; only queues the samples. */
     fun write(stream: Int, pcm: ByteArray) = player(stream).offer(pcm)
