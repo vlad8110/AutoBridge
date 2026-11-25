@@ -263,6 +263,8 @@ class BridgeService : Service() {
                 if (socket != null) {
                     phoneIp = socket.inetAddress.hostAddress
                     say("Found phone at $phoneIp")
+                    // The log-request line may be dead (Wi-Fi dropped, or a new address): reconnect it now.
+                    runCatching { logLine?.close() }
                     socket.tcpNoDelay = true
                     val fd = ParcelFileDescriptor.fromSocket(socket).detachFd()  // native side owns this copy
                     socket.close()
