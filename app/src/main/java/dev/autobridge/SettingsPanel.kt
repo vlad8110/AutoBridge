@@ -42,7 +42,7 @@ class SettingsPanel(
     private val voiceDetail = text(26f, MUTED).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
     private val tiles = mutableListOf<() -> Unit>()
     private val batteryPanel = BatteryPanel(context, k)
-    private val eqPanel = EqPanel(context, k)
+    private val eqPanel: EqPanel = EqPanel(context, k) { eqPanel.close(); this@SettingsPanel.close() }
 
     init {
         setBackgroundColor(BLACK)

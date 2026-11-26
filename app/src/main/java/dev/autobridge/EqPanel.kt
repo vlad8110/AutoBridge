@@ -17,7 +17,8 @@ import android.widget.TextView
 import kotlin.math.roundToInt
 
 /** The music equalizer page, opened from settings: presets, an on/off switch and 10 draggable bands. */
-class EqPanel(context: Context, private val k: Float) : FrameLayout(context) {
+/** [toAndroidAuto] closes the EQ and the settings page under it, straight back to Android Auto. */
+class EqPanel(context: Context, private val k: Float, private val toAndroidAuto: () -> Unit) : FrameLayout(context) {
     private val s = Settings(context)
     private val eq = Equalizer.music
     private val bands = EqView(context, k) { g -> eq.gains = g; save(CUSTOM) }
@@ -40,7 +41,9 @@ class EqPanel(context: Context, private val k: Float) : FrameLayout(context) {
                 }, LinearLayout.LayoutParams(0, -2, 1f))
                 addView(power.apply { gravity = Gravity.CENTER; letterSpacing = 0.02f; setOnClickListener { eq.enabled = !eq.enabled; s.eqEnabled = eq.enabled; refresh() } },
                     LinearLayout.LayoutParams(px(240), px(110)))
-                addView(button("Done", primary = true) { close() }, LinearLayout.LayoutParams(px(240), px(110)).apply { marginStart = px(22) })
+                addView(button("Done") { close() }, LinearLayout.LayoutParams(px(240), px(110)).apply { marginStart = px(22) })
+                // Filled like the settings page's own Android Auto button: the way back to driving.
+                addView(button("Android Auto", primary = true) { toAndroidAuto() }, LinearLayout.LayoutParams(px(300), px(110)).apply { marginStart = px(22) })
             })
             addView(text(26f, MUTED).apply { text = "PRESETS"; letterSpacing = 0.22f }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(48); bottomMargin = px(18) })
             addView(LinearLayout(context).apply {
