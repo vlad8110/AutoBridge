@@ -14,7 +14,6 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.view.Surface
-import java.util.concurrent.LinkedBlockingQueue
 
 /**
  * H.264 decoder onto the projection surface, on its own thread so a busy screen (e.g. pulling down
@@ -146,8 +145,13 @@ class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> U
      * stream made the knob change navigation volume instead of music.
      */
     private class Player(s: Stream) {
-        val queue = LinkedBlockingQueue<ByteArray>()
+        val queue = java.util.concurrent.LinkedBlockingDeque<ByteArray>()
+        private val queued = java.util.concurrent.atomic.AtomicInteger()  // bytes waiting in [queue]
         private val alwaysOn = s.music
+        private val second = s.rate * (if (s.stereo) 2 else 1) * 2
+        // Music waits until 0.4 s is queued before playing (and again if it ever runs dry), so a short
+        // hiccup on the phone (pulling down its notification shade, Wi-Fi) is absorbed instead of heard.
+        private val reserve = if (s.music) second * 2 / 5 else 0
         @Volatile private var wanted = true
         private val track: AudioTrack
         private val writer: Thread
@@ -160,13 +164,30 @@ class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> U
                 .setAudioAttributes(AudioAttributes.Builder().setUsage(s.usage)
                     .setContentType(if (s.music) AudioAttributes.CONTENT_TYPE_MUSIC else AudioAttributes.CONTENT_TYPE_SPEECH).build())
                 .setAudioFormat(AudioFormat.Builder().setSampleRate(s.rate).setChannelMask(mask).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
-                .setBufferSizeInBytes(maxOf(min * 2, quarterSecond)).build().apply { play() }
+                .setBufferSizeInBytes(maxOf(min * 2, if (s.music) second else quarterSecond)).build().apply { play() }
             writer = Thread({
                 var playing = true
+                var filling = reserve > 0
+                var underruns = 0
                 try {
                     while (true) {
+                        if (filling) {
+                            if (queued.get() < reserve) { Thread.sleep(10); continue }
+                            filling = false
+                            underruns = track.underrunCount  // the empty wait itself doesn't count as running dry
+                        }
                         val b = queue.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS)
                         if (b != null) {
+                            queued.addAndGet(-b.size)
+                            // Ran dry (a stall, or the phone paused the music): build the reserve up again before
+                            // playing this, rather than play a sliver now and then stall again.
+                            if (reserve > 0 && track.underrunCount > underruns) {
+                                underruns = track.underrunCount
+                                android.util.Log.i(TAG, "music ran dry; building up 0.4 s again")
+                                queue.offerFirst(b); queued.addAndGet(b.size)
+                                filling = true
+                                continue
+                            }
                             if (!playing) { track.play(); playing = true }
                             if (alwaysOn) Equalizer.music.process(b)  // music only: directions stay clear
                             track.write(b, 0, b.size)
@@ -184,7 +205,8 @@ class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> U
 
         fun offer(pcm: ByteArray) {
             wanted = true
-            if (queue.size > MAX_QUEUED) queue.poll()  // over ~1 s behind: drop the oldest rather than lag
+            while (queued.get() > second) queue.poll()?.let { queued.addAndGet(-it.size) } ?: break  // over 1 s behind: drop the oldest rather than lag
+            queued.addAndGet(pcm.size)
             queue.offer(pcm)
         }
 
@@ -194,7 +216,6 @@ class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> U
             runCatching { track.stop(); track.release() }
         }
 
-        companion object { const val MAX_QUEUED = 50 }
     }
 
     private val players = arrayOfNulls<Player>(3)

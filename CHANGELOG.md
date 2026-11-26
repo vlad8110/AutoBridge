@@ -3,6 +3,9 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test; the phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page.
 
+## 0.6.8 (truck app only)
+- Fixed: music briefly cut out a few minutes in, and whenever the phone's notification shade was pulled down. The truck now holds 0.4 s of music in reserve and rebuilds it if it ever runs dry. Directions and voice still play instantly.
+
 ## 0.6.7
 - Quieter Wi-Fi check: a truck that already works only reports when it fixed something (TEST still reports everything).
 - When the phone can't rejoin the hotspot, the message now says it may just be out of range.
