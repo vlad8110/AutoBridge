@@ -74,6 +74,18 @@ class EqualizerTest {
         assertTrue(eq.levels[0] < eq.levels[5] - 0.2f)  // 32 Hz stays far lower
     }
 
+    @Test fun theLightsWaitForTheSpeakers() {
+        val eq = Equalizer().apply { metering = true }
+        eq.process(sine(1000.0, 16000.0))  // 1 s of music, then 1 s of silence
+        eq.process(ByteArray(48_000 * 4))
+        eq.heard(unheard = 48_000, atNanos = 0)  // the speakers are a second behind: still on the music
+        val playing = eq.levelsHeard(0)!!
+        assertEquals(5, playing.indices.maxByOrNull { playing[it] })
+        eq.heard(unheard = 0, atNanos = 0)  // caught up: silence
+        assertTrue(eq.levelsHeard(0)!!.all { it < 0.05f })
+        assertEquals(null, eq.levelsHeard(1_000_000_000))  // a second past anything processed: the music stopped
+    }
+
     @Test fun airShelfLiftsTheTopEndAndLeavesTheMids() {
         val up = { f: Double -> Equalizer().apply { gains = FloatArray(10).also { it[9] = 6f } }.let { eq ->
             val pcm = sine(f, 4000.0); val before = rms(pcm); eq.process(pcm); db(rms(pcm), before) } }

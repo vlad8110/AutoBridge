@@ -155,10 +155,14 @@ class MainActivity : Activity() {
     private fun render() {
         val d = details
         val pwSaved = d?.let { WifiDetails.password(this, it.ssid) != null } == true
+        val trucks = WifiDetails.savedHotspots(this)
         val (title, color, sub) = when {
             RelayService.aaRunning -> Triple("Connected to the truck", GREEN,
                 (d?.let { "${it.ssid}, " } ?: "") + if (pwSaved) "password saved" else "password not saved here")
             wifiProblem != null -> Triple("Can't see the hotspot", AMBER, wifiProblem!!)
+            // Home or work Wi-Fi once a truck is set up: nothing to fix, so no amber.
+            d != null && !pwSaved && trucks.isNotEmpty() -> Triple("Not on the truck's hotspot", WHITE,
+                "On ${d.ssid}. Join ${trucks.joinToString(" or ")} to connect.\nNew truck? Join its hotspot, then add its password.")
             d != null && !pwSaved -> Triple("Add the hotspot password", AMBER,
                 "On ${d.ssid}. A new truck gets its Wi-Fi details from here, so type it exactly as the truck shows it.")
             else -> Triple("Waiting for the truck", WHITE,

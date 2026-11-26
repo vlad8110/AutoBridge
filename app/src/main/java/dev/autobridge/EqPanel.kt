@@ -24,6 +24,12 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
     private val bands = EqView(context, k) { g -> eq.gains = g; save(CUSTOM) }
     private val presetViews = mutableMapOf<String, TextView>()
     private val power = text(32f)
+    private val slots = (1..SLOTS).map { n ->
+        Lamp.button(context, k, "EQ $n", 32f, momentary = false) { if (s.eqSlot(n) == null) store(n) else load(n) }.apply {
+            minWidth = 0; setPadding(0, 0, 0, px(6))
+            setOnLongClickListener { store(n); true }
+        }
+    }
 
     init {
         setBackgroundColor(BLACK)
@@ -39,11 +45,14 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                     addView(text(26f, MUTED).apply { text = "SOUND"; letterSpacing = 0.25f })
                     addView(text(64f, light = true).apply { text = "Equalizer" })
                 }, LinearLayout.LayoutParams(0, -2, 1f))
+                // Saved EQs, like the truck's radio favorites: tap to load, press and hold to save.
+                slots.forEachIndexed { i, b -> addView(b, LinearLayout.LayoutParams(px(170), px(110)).apply { if (i > 0) marginStart = px(22) }) }
+                addView(View(context).apply { setBackgroundColor(OUTLINE) }, LinearLayout.LayoutParams(px(2), px(80)).apply { marginStart = px(28); marginEnd = px(6) })
                 addView(power.apply {
                     gravity = Gravity.CENTER; letterSpacing = 0.02f; setPadding(0, 0, 0, px(6))
                     Lamp.style(this, k, px(20).toFloat(), momentary = false)
                     setOnClickListener { eq.enabled = !eq.enabled; s.eqEnabled = eq.enabled; refresh() }
-                }, LinearLayout.LayoutParams(px(240), px(110)))
+                }, LinearLayout.LayoutParams(px(240), px(110)).apply { marginStart = px(22) })
                 addView(Lamp.button(context, k, "Android Auto", 32f) { toAndroidAuto() }, LinearLayout.LayoutParams(px(300), px(110)).apply { marginStart = px(22) })
                 // Back to settings: a gear, last in the row.
                 addView(GearView(context).apply {
@@ -83,9 +92,25 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         refresh()
     }
 
+    private fun load(n: Int) {
+        val g = Equalizer.decode(s.eqSlot(n))
+        eq.gains = g; bands.gains = g.copyOf(); save("EQ $n")
+    }
+
+    private fun store(n: Int) {
+        s.setEqSlot(n, Equalizer.encode(eq.gains)); save("EQ $n")
+        android.widget.Toast.makeText(context, "Saved to EQ $n", android.widget.Toast.LENGTH_SHORT).show()
+    }
+
     private fun refresh() {
         val current = s.eqPreset
         presetViews.forEach { (name, v) -> Lamp.lit(v, name == current) }
+        slots.forEachIndexed { i, b ->
+            val n = i + 1; val empty = s.eqSlot(n) == null
+            Lamp.lit(b, current == "EQ $n")
+            b.setTextColor(if (empty) MUTED else WHITE)
+            b.contentDescription = "EQ $n, " + if (empty) "empty. Tap to save the current curve here." else "saved. Press and hold to save the current curve here instead."
+        }
         power.text = if (eq.enabled) "EQ on" else "EQ off"
         Lamp.lit(power, eq.enabled)
         bands.dim = !eq.enabled; bands.invalidate()
@@ -171,12 +196,12 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         /** Each band's track is a column of LED lights: green, then yellow, then red at the top. */
         private fun meter(c: Canvas) {
             val eq = Equalizer.music
-            val live = eq.metering && System.nanoTime() / 1_000_000 - eq.levelsAt < 250  // music stopped: let them fall
+            val heard = if (eq.metering) eq.levelsHeard(System.nanoTime()) else null  // null: music stopped, let them fall
             val segH = (bottom - top) / SEGMENTS
             val half = (right - left) / gains.size * 0.165f  // 0.8: half as wide as 0.7
             p.style = Paint.Style.FILL
             for (i in gains.indices) {
-                val target = if (live) eq.levels[i] else 0f
+                val target = heard?.get(i) ?: 0f
                 shown[i] = if (target > shown[i]) target else shown[i] * 0.88f
                 val lit = (shown[i] * SEGMENTS).roundToInt()
                 for (n in 0 until SEGMENTS) {
@@ -212,6 +237,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
 
     private companion object {
         const val CUSTOM = "Custom"
+        const val SLOTS = 3  // saved EQs in the header
         // A stereo level meter's lights.
         const val SEGMENTS = 18
         const val LED_GREEN = 0xFF3CF05A.toInt()

@@ -23,6 +23,9 @@ data class WifiDetails(val ssid: String, val bssid: String, val frequencyMhz: In
         /** The hotspot password the owner typed in, per network name (Android never lets apps read saved ones). */
         fun password(context: android.content.Context, ssid: String): String? =
             context.getSharedPreferences("hotspots", android.content.Context.MODE_PRIVATE).getString(ssid, null)
+        /** Hotspots with a saved password: the trucks this phone is set up for. */
+        fun savedHotspots(context: android.content.Context): Set<String> =
+            context.getSharedPreferences("hotspots", android.content.Context.MODE_PRIVATE).all.keys
         fun setPassword(context: android.content.Context, ssid: String, password: String) =
             context.getSharedPreferences("hotspots", android.content.Context.MODE_PRIVATE).edit().putString(ssid, password).apply()
 

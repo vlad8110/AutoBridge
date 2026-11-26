@@ -158,6 +158,8 @@ class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> U
         // hiccup on the phone (pulling down its notification shade, Wi-Fi) is absorbed instead of heard.
         private val reserve = if (s.music) second * 2 / 5 else 0
         @Volatile private var wanted = true
+        private var written = 0L  // music frames written to [track]; writer thread only
+        private val stamp = android.media.AudioTimestamp()
         private val track: AudioTrack
         private val writer: Thread
 
@@ -196,6 +198,11 @@ class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> U
                             if (!playing) { track.play(); playing = true }
                             if (alwaysOn) Equalizer.music.process(b)  // music only: directions stay clear
                             track.write(b, 0, b.size)
+                            if (alwaysOn) {
+                                written += b.size / 4
+                                // Tells the EQ lights what's coming out of the speakers now (only while its page is open).
+                                if (Equalizer.music.metering && track.getTimestamp(stamp)) Equalizer.music.heard(written - stamp.framePosition, stamp.nanoTime)
+                            }
                         } else if (playing && !wanted && !alwaysOn) {
                             track.stop()  // plays out what's buffered, then the truck sees this sound as finished
                             playing = false

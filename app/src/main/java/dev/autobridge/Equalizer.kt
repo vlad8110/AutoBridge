@@ -28,16 +28,48 @@ class Equalizer(private val rate: Int = 48_000) {
     fun process(pcm: ByteArray) {
         if (enabled) equalize(pcm)
         if (metering) meter(pcm)
+        processed += pcm.size / 4
     }
 
     // ---- the EQ page's light meter ----
 
     /** Set while the EQ page is open; otherwise metering costs nothing. */
     @Volatile var metering = false
-    /** Loudness per band, 0..1 (-54..0 dBFS), from what actually plays. Written by the audio thread; read by the UI. */
+    /** The newest loudness per band, 0..1 (-54..0 dBFS), after the EQ. Written by the audio thread; the UI shows [levelsHeard]. */
     val levels = FloatArray(BANDS.size)
-    /** When [levels] last changed (System.nanoTime ms): the UI lets the lights fall once the music stops. */
-    @Volatile var levelsAt = 0L
+    /** Frames through [process]; the speaker track gets the same frames in the same order. Audio thread only. */
+    private var processed = 0L
+    // Each ~33 ms reading, tagged with the frame it ends on, so the lights can wait for the speakers.
+    private val ring = Array(RING) { FloatArray(BANDS.size) }
+    private val ringFrame = LongArray(RING)
+    @Volatile private var ringHead = 0
+    // The frame the speakers were playing at [playNanos] (System.nanoTime), from the track's timestamp.
+    @Volatile private var playFrame = -1L
+    @Volatile private var playNanos = 0L
+
+    /**
+     * Called by the music writer after each write: [unheard] frames it has written are not out of the
+     * speakers yet as of [atNanos]. Same thread as [process].
+     */
+    fun heard(unheard: Long, atNanos: Long) { playFrame = processed - unheard; playNanos = atNanos }
+
+    /**
+     * The levels for what the speakers play at [nowNanos], or null when nothing is playing then.
+     * Readings are taken before the music goes into the truck's ~1 s speaker buffer, so showing the
+     * newest one put the lights a second ahead of the beat (0.8.0).
+     */
+    fun levelsHeard(nowNanos: Long): FloatArray? {
+        val head = ringHead
+        if (head == 0) return null
+        val at = if (playFrame < 0) ringFrame[(head - 1) % RING]  // no timestamp yet: newest
+                 else playFrame + (nowNanos - playNanos) * rate / 1_000_000_000
+        for (n in 1..minOf(head, RING)) {
+            val i = (head - n) % RING
+            if (ringFrame[i] <= at) return ring[i].takeIf { at - ringFrame[i] < rate / 4 }  // a gap: the music stopped
+        }
+        return ring[head % RING].takeIf { head >= RING }  // the speakers are further behind than we keep: show the oldest
+    }
+
     private val meterCoef = Array(BANDS.size) { bandPass(BANDS[it], Q) }
     private val meterState = Array(BANDS.size) { DoubleArray(4) }
     private val meterSum = DoubleArray(BANDS.size)
@@ -64,7 +96,9 @@ class Equalizer(private val rate: Int = 48_000) {
                     meterSum[b] = 0.0
                 }
                 meterFrames = 0
-                levelsAt = System.nanoTime() / 1_000_000
+                val h = ringHead % RING
+                levels.copyInto(ring[h]); ringFrame[h] = processed + i / 4
+                ringHead++
             }
         }
     }
@@ -174,6 +208,7 @@ class Equalizer(private val rate: Int = 48_000) {
         /** The one EQ on Android Auto's music; set from the settings page. Declared after BANDS, which it needs. */
         val music by lazy { Equalizer() }
 
+        private const val RING = 64  // ~2 s of readings: more than the speaker buffer
         fun encode(g: FloatArray) = g.joinToString(",") { it.toString() }
         fun decode(s: String?): FloatArray =
             s?.split(',')?.mapNotNull { it.toFloatOrNull()?.coerceIn(-MAX_DB, MAX_DB) }?.takeIf { it.size == BANDS.size }?.toFloatArray()

@@ -655,6 +655,9 @@ class Settings(context: Context) {
     var eqGains: String? get() = p.getString("eqGains", null); set(v) = p.edit().putString("eqGains", v).apply()
     var eqEnabled: Boolean get() = p.getBoolean("eqOn", true); set(v) = p.edit().putBoolean("eqOn", v).apply()
     var eqPreset: String get() = p.getString("eqPreset", "Flat") ?: "Flat"; set(v) = p.edit().putString("eqPreset", v).apply()
+    /** The owner's saved EQs (EQ 1..3 on the EQ page), as [Equalizer.encode]; null while empty. */
+    fun eqSlot(n: Int): String? = p.getString("eqSlot$n", null)
+    fun setEqSlot(n: Int, gains: String) = p.edit().putString("eqSlot$n", gains).apply()
 
     fun forget() = p.edit().remove("ssid").remove("password").remove("bssid").apply()
 
