@@ -20,7 +20,7 @@ import kotlin.math.roundToInt
 class EqPanel(context: Context, private val k: Float) : FrameLayout(context) {
     private val s = Settings(context)
     private val eq = Equalizer.music
-    private val bands = EqView(context, k) { g -> eq.gains = g; save("Custom") }
+    private val bands = EqView(context, k) { g -> eq.gains = g; save(CUSTOM) }
     private val presetViews = mutableMapOf<String, TextView>()
     private val power = text(30f)
 
@@ -38,23 +38,26 @@ class EqPanel(context: Context, private val k: Float) : FrameLayout(context) {
                     addView(text(26f, MUTED).apply { text = "SOUND"; letterSpacing = 0.25f })
                     addView(text(64f, light = true).apply { text = "Equalizer" })
                 }, LinearLayout.LayoutParams(0, -2, 1f))
-                addView(power.apply { gravity = Gravity.CENTER; letterSpacing = 0.12f; setOnClickListener { eq.enabled = !eq.enabled; s.eqEnabled = eq.enabled; refresh() } },
+                addView(power.apply { gravity = Gravity.CENTER; letterSpacing = 0.02f; setOnClickListener { eq.enabled = !eq.enabled; s.eqEnabled = eq.enabled; refresh() } },
                     LinearLayout.LayoutParams(px(240), px(110)))
-                addView(button("DONE", primary = true) { close() }, LinearLayout.LayoutParams(px(240), px(110)).apply { marginStart = px(22) })
+                addView(button("Done", primary = true) { close() }, LinearLayout.LayoutParams(px(240), px(110)).apply { marginStart = px(22) })
             })
             addView(text(26f, MUTED).apply { text = "PRESETS"; letterSpacing = 0.22f }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(48); bottomMargin = px(18) })
             addView(LinearLayout(context).apply {
                 Equalizer.PRESETS.forEachIndexed { i, (name, gains) ->
-                    val b = button(name.uppercase()) { eq.gains = gains; bands.gains = gains.copyOf(); save(name) }
+                    val b = button(name) { eq.gains = gains; bands.gains = gains.copyOf(); save(name) }
                     presetViews[name] = b
                     addView(b, LinearLayout.LayoutParams(0, px(100), 1f).apply { if (i > 0) marginStart = px(16) })
                 }
+                // Not tappable: it lights up once you drag a band yourself.
+                val custom = button(CUSTOM) {}.apply { isClickable = false }
+                presetViews[CUSTOM] = custom
+                addView(custom, LinearLayout.LayoutParams(0, px(100), 1f).apply { marginStart = px(16) })
             })
             addView(bands.apply { background = TruckBar.chamfer(BLACK, OUTLINE, px(40).toFloat()) },
                 LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = px(40) })
             addView(text(26f, MUTED).apply {
-                text = "Drag a band up or down. Music only; directions and calls aren't changed. Boosts lower the overall level a little so nothing distorts. " +
-                    "For the cleanest sound, keep the truck's own Bass, Mid and Treble near the middle and shape it here."
+                text = "Drag a band up or down. Changes music only; for the cleanest sound, keep the truck's own Bass, Mid and Treble centered."
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(24) })
         }
         addView(page, LayoutParams(-1, -1))
@@ -78,9 +81,9 @@ class EqPanel(context: Context, private val k: Float) : FrameLayout(context) {
             v.setTextColor(if (on) BLUE else WHITE)
             v.background = TruckBar.chamfer(if (on) NAVY else BLACK, if (on) BLUE else OUTLINE, px(18).toFloat())
         }
-        power.text = if (eq.enabled) "EQ ON" else "EQ OFF"
+        power.text = if (eq.enabled) "EQ on" else "EQ off"
         power.setTextColor(if (eq.enabled) BLUE else MUTED)
-        power.background = TruckBar.chamfer(if (eq.enabled) NAVY else BLACK, if (eq.enabled) BLUE else OUTLINE, px(20).toFloat())
+        power.background = TruckBar.chamfer(BLACK, if (eq.enabled) BLUE else OUTLINE, px(20).toFloat())  // outlined: a switch, not the Done button
         bands.dim = !eq.enabled; bands.invalidate()
     }
 
@@ -92,7 +95,7 @@ class EqPanel(context: Context, private val k: Float) : FrameLayout(context) {
     }
 
     private fun button(label: String, primary: Boolean = false, onClick: () -> Unit) = text(if (primary) 32f else 26f, if (primary) BLUE else WHITE).apply {
-        text = label; gravity = Gravity.CENTER; letterSpacing = 0.1f; maxLines = 1
+        text = label; gravity = Gravity.CENTER; letterSpacing = 0.02f; maxLines = 1
         background = TruckBar.chamfer(if (primary) NAVY else BLACK, if (primary) BLUE else OUTLINE, px(18).toFloat())
         setOnClickListener { onClick() }
     }
@@ -171,6 +174,7 @@ class EqPanel(context: Context, private val k: Float) : FrameLayout(context) {
     }
 
     private companion object {
+        const val CUSTOM = "Custom"
         const val WHITE = 0xFFF1F3F4.toInt()
         const val MUTED = 0xFF9AA0A6.toInt()
         const val BLUE = 0xFF8AB4F8.toInt()

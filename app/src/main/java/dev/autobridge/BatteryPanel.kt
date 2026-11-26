@@ -92,7 +92,7 @@ class BatteryPanel(c: Context, private val k: Float) : View(c) {
         fill(BLACK); c.drawPath(card, p); line(if (charging) GREEN else OUTLINE, 2f); c.drawPath(card, p)
         // state pill
         val pill = i.state.label
-        text(24f, false); val pw = p.measureText(pill) + 44f
+        text(24f, false); p.letterSpacing = 0.12f; val pw = p.measureText(pill) + 44f  // measured as drawn
         val pillColor = when (i.state) { BatteryInfo.State.CHARGING, BatteryInfo.State.FULL -> GREEN; BatteryInfo.State.PLUGGED -> BLUE; BatteryInfo.State.OPEN -> AMBER; else -> MUTED }
         line(pillColor, 2f); c.drawRect(w - 44f - pw, 34f, w - 44f, 80f, p)
         text(24f, false, pillColor); p.letterSpacing = 0.12f; c.drawText(pill, w - 44f - pw + 22f, 66f, p); p.letterSpacing = 0f
@@ -136,10 +136,11 @@ class BatteryPanel(c: Context, private val k: Float) : View(c) {
             p.textAlign = Paint.Align.LEFT; p.letterSpacing = 0f
         }
         // details
-        val cells = listOf(
+        // Power, time, ready-by and adding only mean something while charging; otherwise they'd sit as dashes.
+        val cells = if (charging) listOf(
             "POWER" to i.power, i.timeLabel to i.timeLeft, "READY BY" to i.readyBy,
             "ADDING" to i.adding, i.toAddLabel to i.toAdd, "CURRENT LIMIT" to i.current,
-        )
+        ) else listOf(i.toAddLabel to i.toAdd, "CURRENT LIMIT" to i.current)
         val cw = (w - 88f) / 3
         line(0xFF2A2D31.toInt(), 2f); c.drawLine(44f, 396f, w - 44f, 396f, p)
         cells.forEachIndexed { n, (label, value) ->
@@ -166,7 +167,7 @@ class BatteryPanel(c: Context, private val k: Float) : View(c) {
         const val LIGHT = 0xFFBDC1C6.toInt()
         const val MUTED = 0xFF9AA0A6.toInt()
         const val GREEN = 0xFF81C995.toInt()
-        const val MINT = 0xFF5ED7BD.toInt()
+        const val MINT = GREEN  // one green everywhere (was a separate mint that clashed with the truck bar)
         const val AMBER = 0xFFF2BD64.toInt()
         const val LOW = 0xFFFF857D.toInt()
         const val BLUE = 0xFF8AB4F8.toInt()

@@ -40,20 +40,23 @@ object Logs {
             var first = true
             // logcat can exit (its log service restarted, or it was killed): start it again, or the log stops for good.
             while (true) {
+                var p: java.lang.Process? = null
                 runCatching {
+                    rotate(d)  // a logcat that keeps exiting would otherwise grow the file with headers alone
                     var out = FileWriter(File(d, CURRENT), true)
                     out.write(if (first) "==== AutoBridge $version started ${Date()} (process ${Process.myPid()}) ====\n"
                               else "==== log capture restarted ${Date()} ====\n"); out.flush()
                     // After a restart, only new lines: the buffer's older ones are already in the file.
                     val since = if (first) emptyArray() else arrayOf("-T", "1")
                     first = false
-                    val p = Runtime.getRuntime().exec(arrayOf("logcat", "-v", "time", "--pid=${Process.myPid()}", *since))
-                    p.inputStream.bufferedReader().forEachLine { l ->
+                    p = Runtime.getRuntime().exec(arrayOf("logcat", "-v", "time", "--pid=${Process.myPid()}", *since))
+                    p!!.inputStream.bufferedReader().forEachLine { l ->
                         out.write(l); out.write("\n"); out.flush()  // flushed per line: nothing is lost if we die
                         if (rotate(d)) { out.close(); out = FileWriter(File(d, CURRENT), true) }
                     }
                     out.close()
                 }
+                p?.destroy()  // a write that failed (storage full) leaves logcat blocked; don't start a second beside it
                 Thread.sleep(2000)
             }
         }

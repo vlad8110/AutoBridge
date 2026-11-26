@@ -55,7 +55,7 @@ class BridgeService : Service() {
         const val EXTRA_BOOT = "boot"
         /** Phone silent this long = gone. Its pings normally come every second or so (logged at session start). */
         /** No first ping this long after connecting: the handshake died (Wi-Fi dropped mid-way). */
-        const val FIRST_PING_MS = 20_000L
+        const val FIRST_PING_MS = 60_000L  // room for a new phone's first-time Android Auto screens
         const val PING_SILENCE_MS = 5_000L  // pings come every 1.0 s; the longest gap seen on the truck was 1.7 s
         var onStatus: ((String) -> Unit)? = null
         var onVideoActive: ((Boolean) -> Unit)? = null

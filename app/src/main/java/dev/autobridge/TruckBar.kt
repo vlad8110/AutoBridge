@@ -380,7 +380,7 @@ class TruckBar(context: Context) : FrameLayout(context) {
         private const val RED = 0xFFF28B82.toInt()
         private const val BLUE = 0xFF8AB4F8.toInt()
         private const val AMBER = 0xFFF2BD64.toInt()
-        private const val MINT = 0xFF5ED7BD.toInt()
+        private const val MINT = GREEN  // one green everywhere (was a separate mint that clashed)
         private const val LOW = 0xFFFF857D.toInt()
         private const val BRAKE = 0xFFFF857D.toInt()
         private const val DIM = 0xFF5F6368.toInt()

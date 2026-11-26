@@ -36,7 +36,7 @@ class SettingsPanel(
     /** Sizes are taken from the 2012 px wide mockup and scaled to this screen. */
     private val k = resources.displayMetrics.widthPixels / 2012f
 
-    private val phone = fact(); private val version = fact(); private val picture = fact(); private val battery = fact()
+    private val phone = fact(); private val version = fact(); private val picture = fact()
     private val hotspot = text(40f)
     private val hotspotDetail = text(26f, MUTED, mono = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
     private val voiceDetail = text(26f, MUTED).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
@@ -63,18 +63,20 @@ class SettingsPanel(
             addView(View(context).apply { setBackgroundColor(0xFF2A2D31.toInt()) }, LinearLayout.LayoutParams(-1, px(2)).apply { topMargin = px(80) })
             addView(LinearLayout(context).apply {
                 addView(facts("PHONE", phone, "PICTURE", picture), LinearLayout.LayoutParams(0, -2, 1f))
-                addView(facts("VERSION", version, "BATTERY", battery), LinearLayout.LayoutParams(0, -2, 1f))
+                addView(facts("VERSION", version), LinearLayout.LayoutParams(0, -2, 1f))
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(28) })
             addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
-            addView(button("SOUND · EQUALIZER") { eqPanel.open() }, LinearLayout.LayoutParams(-1, px(120)).apply { bottomMargin = px(22) })
-            addView(button("ANDROID AUTO", primary = true) { close() }, LinearLayout.LayoutParams(-1, px(120)))
-            addView(button("EXIT") { onExit() }, LinearLayout.LayoutParams(-1, px(120)).apply { topMargin = px(22) })
+            addView(button("Equalizer") { eqPanel.open() }, LinearLayout.LayoutParams(-1, px(120)).apply { bottomMargin = px(22) })
+            addView(button("Android Auto", primary = true) { close() }, LinearLayout.LayoutParams(-1, px(120)))
+            addView(button("Exit") { onExit() }, LinearLayout.LayoutParams(-1, px(120)).apply { topMargin = px(22) })
         }
         val right = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             header("EV BATTERY", first = true)
             addView(batteryPanel, LinearLayout.LayoutParams(-1, -2))
-            header("DISPLAY · APPLIES ON RETURN")
+            header("DISPLAY")
+            addView(text(26f, MUTED).apply { text = "Changes restart Android Auto when you go back to it." },
+                LinearLayout.LayoutParams(-2, -2).apply { topMargin = -px(6); bottomMargin = px(16) })
             addView(LinearLayout(context).apply {
                 addView(tile(Glyph.BAR, "Truck bar", "Battery, range, speed and power under Android Auto", { s.barEnabled }) { s.barEnabled = it }, LinearLayout.LayoutParams(0, px(200), 1f))
                 addView(tile(Glyph.STATUS, "Status bar", "Time, phone and alerts at the top. Off gives Android Auto the space", { s.statusBarShown }) { s.statusBarShown = it },
@@ -83,17 +85,17 @@ class SettingsPanel(
                     LinearLayout.LayoutParams(0, px(200), 1f).apply { marginStart = px(22) })
             })
             header("TRUCK HOTSPOT")
-            addView(row(hotspot, hotspotDetail, button("TEST") {
+            addView(row(hotspot, hotspotDetail, button("Test") {
                 val service = BridgeService.instance ?: return@button toast("AutoBridge isn't running")
                 toast("Checking the hotspot details with your phone…")
                 service.testWifi { toast(it); refresh() }
-            }, button("EDIT") { editWifi() }, button("FORGET") { s.forget(); refresh(); toast("Hotspot details forgotten") }))
+            }, button("Edit") { editWifi() }, button("Forget") { confirmForget() }))
             header("PHONE")
             addView(LinearLayout(context).apply {
-                addView(row(text(40f).apply { text = "Voice button" }, voiceDetail, button("CHANGE") {
+                addView(row(text(40f).apply { text = "Voice button" }, voiceDetail, button("Change") {
                     VoiceAssistant.picker(context)?.let { runCatching { context.startActivity(it) } } ?: toast("This truck has no assistant setting")
                 }), LinearLayout.LayoutParams(0, -2, 1f))
-                addView(row(text(40f).apply { text = "Send log" }, text(26f, MUTED).apply { text = "Saved on the phone" }, button("SEND") {
+                addView(row(text(40f).apply { text = "Send log" }, text(26f, MUTED).apply { text = "Saved on the phone" }, button("Send") {
                     BridgeService.instance?.sendLogs("settings") ?: toast("AutoBridge isn't running yet")
                 }), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = px(22) })
             })
@@ -116,8 +118,6 @@ class SettingsPanel(
     fun showTruck(t: Truck) {
         if (visibility != VISIBLE) return
         batteryPanel.show(t)
-        val b = BarText.of(t, java.util.Locale.getDefault().country in setOf("US", "GB", "LR", "MM"))
-        battery.text = "${b.percent}% · ${b.range} ${b.rangeUnit}"
     }
 
     /** True if the page was open (so Back closes it instead of leaving AutoBridge). */
@@ -130,13 +130,22 @@ class SettingsPanel(
     private fun refresh() {
         tiles.forEach { it() }
         hotspot.text = s.ssid.ifEmpty { "Not set" }
-        hotspotDetail.text = if (s.bssid.isEmpty()) "Tap Edit, or open AutoBridge Phone on the hotspot" else "${s.bssid} · password ${if (s.password.isEmpty()) "missing" else "saved"}"
+        hotspotDetail.text = if (s.bssid.isEmpty()) "Open AutoBridge Phone, or Edit" else "${s.bssid} · password ${if (s.password.isEmpty()) "missing" else "saved"}"
         voiceDetail.text = VoiceAssistant.status(context).removePrefix("Voice button: ").replaceFirstChar { it.uppercase() }
         version.text = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "—"
         val video = BridgeService.instance?.video
         phone.text = BridgeService.phoneName ?: "No phone yet"
         phone.setTextColor(if (video != null) GREEN else WHITE)  // green while Android Auto is connected
         picture.text = video?.let { "${it.codecH}p" } ?: "Not connected"
+    }
+
+    /** Forgetting is the one destructive action here, so it asks first and says what happens next. */
+    private fun confirmForget() {
+        val name = s.ssid.ifEmpty { return toast("No hotspot details to forget") }
+        android.app.AlertDialog.Builder(context).setTitle("Forget $name?")
+            .setMessage("AutoBridge will ask AutoBridge Phone for the hotspot details again, or you can enter them with Edit.")
+            .setPositiveButton("Forget") { _, _ -> s.forget(); refresh(); toast("Forgot $name") }
+            .setNegativeButton("Cancel", null).show()
     }
 
     // ---- building blocks, in the truck's boxy style ----
@@ -148,12 +157,15 @@ class SettingsPanel(
         typeface = when { mono -> Typeface.MONOSPACE; light -> Typeface.create("sans-serif-light", Typeface.NORMAL); else -> Typeface.create("sans-serif", Typeface.NORMAL) }
     }
 
-    private fun fact() = text(40f)
+    /** One line, cut with "…" so a long phone name can't run into the next column. */
+    private fun fact() = text(40f).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END; setPadding(0, 0, px(24), 0) }
 
-    private fun facts(k1: String, v1: TextView, k2: String, v2: TextView) = LinearLayout(context).apply {
+    private fun facts(k1: String, v1: TextView, k2: String? = null, v2: TextView? = null) = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
         addView(text(22f, MUTED).apply { text = k1; letterSpacing = 0.14f }); addView(v1)
-        addView(text(22f, MUTED).apply { text = k2; letterSpacing = 0.14f }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(30) }); addView(v2)
+        if (k2 != null && v2 != null) {
+            addView(text(22f, MUTED).apply { text = k2; letterSpacing = 0.14f }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(30) }); addView(v2)
+        }
     }
 
     private fun LinearLayout.header(title: String, first: Boolean = false) =
@@ -167,7 +179,7 @@ class SettingsPanel(
     }
 
     private fun button(label: String, primary: Boolean = false, onClick: () -> Unit) = text(if (primary) 34f else 30f, if (primary) BLUE else WHITE).apply {
-        text = label; gravity = Gravity.CENTER; letterSpacing = 0.12f; minWidth = px(200); setPadding(px(34), 0, px(34), 0)
+        text = label; gravity = Gravity.CENTER; letterSpacing = 0.02f; minWidth = px(200); setPadding(px(34), 0, px(34), 0)
         background = TruckBar.chamfer(if (primary) NAVY else BLACK, if (primary) BLUE else OUTLINE, px(20).toFloat())
         setOnClickListener { onClick() }
     }

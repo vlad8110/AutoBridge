@@ -28,6 +28,8 @@ class RelayService : Service() {
         const val LOG_PORT = 5301  // must match Wireless.PHONE_LOG_PORT in the car app
         const val LOG_REQUEST_PORT = 5302  // must match Wireless.PHONE_LOG_REQUEST_PORT in the car app
         const val SETUP_PORT = 5303  // must match Wireless.PHONE_SETUP_PORT in the car app
+        /** The status line while a session runs; the app's status panel looks for it. */
+        const val RUNNING = "Android Auto is running through the truck"
         @Volatile private var carLine: Socket? = null
 
         /** Asks the truck for its log over the line the truck keeps open; false if the truck isn't connected. */
@@ -54,8 +56,13 @@ class RelayService : Service() {
     /** The address the truck's session came from; only it may send logs or hold the log-request line. */
     @Volatile private var carAddress: InetAddress? = null
 
-    private fun fromCar(s: Socket) = (s.inetAddress == carAddress).also {
-        if (!it) { say("Ignored a connection from ${s.inetAddress?.hostAddress}: not the truck"); runCatching { s.close() } }
+    private fun fromCar(s: Socket): Boolean {
+        val car = carAddress
+        if (s.inetAddress == car) return true
+        // No session yet (the relay just restarted): the truck retries every few seconds, so stay quiet until it connects.
+        if (car != null) say("Ignored a connection from ${s.inetAddress?.hostAddress}: not the truck")
+        runCatching { s.close() }
+        return false
     }
 
     override fun onBind(intent: Intent?) = null
@@ -69,22 +76,23 @@ class RelayService : Service() {
         if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         else startForeground(1, n)
         // Must be IPv4 127.0.0.1: the address the car hands Android Auto. getLoopbackAddress() is ::1 on Android.
-        listen("Android Auto", InetSocketAddress(InetAddress.getByName("127.0.0.1"), AA_PORT)) { offer(aa = it) }
-        listen("car", InetSocketAddress(CAR_PORT)) { carAddress = it.inetAddress; offer(car = it) }
+        listen("Android Auto", "Android Auto on this phone is ready", InetSocketAddress(InetAddress.getByName("127.0.0.1"), AA_PORT)) { offer(aa = it) }
+        listen("car", "The truck connected", InetSocketAddress(CAR_PORT)) { offer(car = it) }
         // Logs and the log-request line only from the truck we're relaying for, one upload at a time.
-        listen("car log", InetSocketAddress(LOG_PORT)) { s -> if (fromCar(s)) saveLog(s) }
-        listen("new truck", InetSocketAddress(SETUP_PORT)) { s -> thread { sendSetup(s) } }
-        listen("car log line", InetSocketAddress(LOG_REQUEST_PORT)) { s -> if (fromCar(s)) { carLine?.let { runCatching { it.close() } }; carLine = s } }
-        say("Ready. Waiting for the car.")
+        listen("car log", "The truck is sending a file", InetSocketAddress(LOG_PORT)) { s -> if (fromCar(s)) thread { saveLog(s) } }
+        listen("new truck", "", InetSocketAddress(SETUP_PORT)) { s -> thread { sendSetup(s) } }
+        listen("car log line", "The truck is ready to send logs", InetSocketAddress(LOG_REQUEST_PORT)) { s -> if (fromCar(s)) { carLine?.let { runCatching { it.close() } }; carLine = s } }
+        say("Ready. Waiting for the truck.")
     }
 
     override fun onDestroy() {
         running = false
-        servers.forEach { runCatching { it.close() } }
+        synchronized(servers) { servers.toList() }.forEach { runCatching { it.close() } }
         super.onDestroy()
     }
 
-    private fun listen(who: String, address: InetSocketAddress, onSocket: (Socket) -> Unit) = thread(name = "relay-$who") {
+    /** [arrived] is what the status screen says when this side connects, in plain words. */
+    private fun listen(who: String, arrived: String, address: InetSocketAddress, onSocket: (Socket) -> Unit) = thread(name = "relay-$who") {
         while (running) {
             try {
                 ServerSocket().use { server ->
@@ -94,7 +102,7 @@ class RelayService : Service() {
                     server.bind(address)
                     while (running) {
                         val s = server.accept().apply { tcpNoDelay = true }
-                        say("$who connected")
+                        if (arrived.isNotEmpty()) say(arrived)
                         onSocket(s)
                     }
                     } finally { synchronized(servers) { servers -= server } }  // a failed bind retries every 2 s
@@ -114,9 +122,10 @@ class RelayService : Service() {
             val c = waitingCar ?: return
             waitingAa = null
             waitingCar = null
+            carAddress = c.inetAddress  // set only once Android Auto really runs through it: a stray connect can't claim it
             a to c
         }
-        say("Android Auto is running through the car")
+        say(RUNNING)
         pipe(pair.first, pair.second)
     }
 
@@ -146,7 +155,7 @@ class RelayService : Service() {
             try { from.getInputStream().copyTo(to.getOutputStream(), 64 * 1024) } catch (_: IOException) {}
             runCatching { a.close() }
             runCatching { b.close() }
-            say("Session ended. Waiting for the car.")
+            say("Android Auto stopped. Waiting for the truck.")
         }
         copy(a, b)
         copy(b, a)

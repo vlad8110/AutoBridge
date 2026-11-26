@@ -3,6 +3,13 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test; the phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page.
 
+## 0.7.2
+- New look for the phone app, matching the truck: black panels with the cut corner, the connection status first in big type (Connected / Waiting / Add the hotspot password), log buttons next, hotspot details last. Plain-word activity list.
+- Settings: the status label (Plugged in, Charging) no longer spills out of its box; long phone names are cut with "…"; the battery is no longer shown twice; charging-only details hide when not charging; Forget asks first; buttons in normal case; one green everywhere.
+- Equalizer: a Custom chip lights up when you drag a band; EQ on/off looks like a switch; shorter help.
+- The phone only treats a connection as the truck once Android Auto runs through it; quiet after the phone app restarts; no crash when Android stops the relay; uploads side by side again.
+- Truck log reader can't leak if storage fills; a new phone gets 60 s (was 20 s) for Android Auto's first-time screens.
+
 ## 0.7.1
 - Fixed: when Bluetooth reconnected during a session, the truck asked the phone to rejoin Wi-Fi, which could knock a working Android Auto off. It now leaves a running session alone.
 - A failed Wi-Fi join now says the hotspot password is probably wrong (the phone is near the truck if Bluetooth works), and the Wi-Fi check names which part differs.
