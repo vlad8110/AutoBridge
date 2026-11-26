@@ -25,7 +25,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
     private val presetViews = mutableMapOf<String, TextView>()
     private val power = text(32f)
     private val slots = (1..SLOTS).map { n ->
-        Lamp.button(context, k, "EQ $n", 32f, momentary = false) { if (s.eqSlot(n) == null) store(n) else load(n) }.apply {
+        Lamp.button(context, k, "Custom $n", 27f, 18f, momentary = false) { if (s.eqSlot(n) == null) store(n) else load(n) }.apply {
             minWidth = 0; setPadding(0, 0, 0, px(6))
             setOnLongClickListener { store(n); true }
         }
@@ -45,14 +45,11 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                     addView(text(26f, MUTED).apply { text = "SOUND"; letterSpacing = 0.25f })
                     addView(text(64f, light = true).apply { text = "Equalizer" })
                 }, LinearLayout.LayoutParams(0, -2, 1f))
-                // Saved EQs, like the truck's radio favorites: tap to load, press and hold to save.
-                slots.forEachIndexed { i, b -> addView(b, LinearLayout.LayoutParams(px(170), px(110)).apply { if (i > 0) marginStart = px(22) }) }
-                addView(View(context).apply { setBackgroundColor(OUTLINE) }, LinearLayout.LayoutParams(px(2), px(80)).apply { marginStart = px(28); marginEnd = px(6) })
                 addView(power.apply {
                     gravity = Gravity.CENTER; letterSpacing = 0.02f; setPadding(0, 0, 0, px(6))
                     Lamp.style(this, k, px(20).toFloat(), momentary = false)
                     setOnClickListener { eq.enabled = !eq.enabled; s.eqEnabled = eq.enabled; refresh() }
-                }, LinearLayout.LayoutParams(px(240), px(110)).apply { marginStart = px(22) })
+                }, LinearLayout.LayoutParams(px(240), px(110)))
                 addView(Lamp.button(context, k, "Android Auto", 32f) { toAndroidAuto() }, LinearLayout.LayoutParams(px(300), px(110)).apply { marginStart = px(22) })
                 // Back to settings: a gear, last in the row.
                 addView(GearView(context).apply {
@@ -68,6 +65,8 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                     presetViews[name] = b
                     addView(b, LinearLayout.LayoutParams(0, px(100), 1f).apply { if (i > 0) marginStart = px(16) })
                 }
+                // The owner's saved curves, like the truck's radio favorites: tap to load, press and hold to save.
+                slots.forEach { addView(it, LinearLayout.LayoutParams(0, px(100), 1f).apply { marginStart = px(16) }) }
             })
             addView(bands.apply { background = TruckBar.chamfer(BLACK, OUTLINE, px(40).toFloat()) },
                 LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = px(40) })
@@ -94,12 +93,12 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
 
     private fun load(n: Int) {
         val g = Equalizer.decode(s.eqSlot(n))
-        eq.gains = g; bands.gains = g.copyOf(); save("EQ $n")
+        eq.gains = g; bands.gains = g.copyOf(); save("Custom $n")
     }
 
     private fun store(n: Int) {
-        s.setEqSlot(n, Equalizer.encode(eq.gains)); save("EQ $n")
-        android.widget.Toast.makeText(context, "Saved to EQ $n", android.widget.Toast.LENGTH_SHORT).show()
+        s.setEqSlot(n, Equalizer.encode(eq.gains)); save("Custom $n")
+        android.widget.Toast.makeText(context, "Saved to Custom $n", android.widget.Toast.LENGTH_SHORT).show()
     }
 
     private fun refresh() {
@@ -107,9 +106,9 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         presetViews.forEach { (name, v) -> Lamp.lit(v, name == current) }
         slots.forEachIndexed { i, b ->
             val n = i + 1; val empty = s.eqSlot(n) == null
-            Lamp.lit(b, current == "EQ $n")
+            Lamp.lit(b, current == "Custom $n")
             b.setTextColor(if (empty) MUTED else WHITE)
-            b.contentDescription = "EQ $n, " + if (empty) "empty. Tap to save the current curve here." else "saved. Press and hold to save the current curve here instead."
+            b.contentDescription = "Custom $n, " + if (empty) "empty. Tap to save the current curve here." else "saved. Press and hold to save the current curve here instead."
         }
         power.text = if (eq.enabled) "EQ on" else "EQ off"
         Lamp.lit(power, eq.enabled)
@@ -237,7 +236,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
 
     private companion object {
         const val CUSTOM = "Custom"
-        const val SLOTS = 3  // saved EQs in the header
+        const val SLOTS = 3  // saved curves, after the presets
         // A stereo level meter's lights.
         const val SEGMENTS = 18
         const val LED_GREEN = 0xFF3CF05A.toInt()

@@ -195,14 +195,11 @@ class Equalizer(private val rate: Int = 48_000) {
          */
         val PRESETS: List<Pair<String, FloatArray>> = listOf(
             "Flat" to floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f, 0f),
-            "Truck" to floatArrayOf(1f, 2f, 1.5f, -1.5f, -1f, 0f, 0.5f, 1f, 1.5f, 2f),  // a touch of low bass and air, less 250-500 Hz mud
             "Bass" to floatArrayOf(3f, 5f, 3.5f, -1f, -1f, 0f, 0f, 0f, 0.5f, 1f),
             "Rock" to floatArrayOf(1.5f, 3f, 2f, -1f, -1.5f, -0.5f, 1f, 2f, 2f, 2f),
             "Pop" to floatArrayOf(1f, 2.5f, 2f, -1f, -1f, 0f, 1f, 1.5f, 2f, 2f),
             "Hip-hop" to floatArrayOf(4f, 5.5f, 3f, -1f, -1.5f, -0.5f, 0.5f, 1f, 1f, 1.5f),
-            "Vocal" to floatArrayOf(-1f, 0f, 0f, -1.5f, -1f, 0.5f, 2f, 1.5f, 0f, 0f),
             "Podcast" to floatArrayOf(-6f, -4f, -1f, -1.5f, 0f, 1f, 2.5f, 2f, 0f, -1f),
-            "Highway" to floatArrayOf(0f, 1.5f, 1f, 0f, 0f, 1.5f, 2f, 2f, 1.5f, 1f),  // lifts where tire and wind noise mask music
         )
 
         /** The one EQ on Android Auto's music; set from the settings page. Declared after BANDS, which it needs. */
