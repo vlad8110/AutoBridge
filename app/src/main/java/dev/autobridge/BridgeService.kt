@@ -230,8 +230,8 @@ class BridgeService : Service() {
         }
     }
 
-    /** One pass over every address in the car's /24: the first that accepts on [port], or null. */
-    private fun sweep(pool: java.util.concurrent.ExecutorService, carIp: String, port: Int): Socket? {
+    /** One pass over every address in the car's /24: the first that accepts on [port] and passes [check], or null. */
+    private fun sweep(pool: java.util.concurrent.ExecutorService, carIp: String, port: Int, check: (Socket) -> Boolean = { true }): Socket? {
         val prefix = carIp.substringBeforeLast('.')
         val opened = java.util.concurrent.ConcurrentLinkedQueue<Socket>()
         val tasks = (1..254).map { "$prefix.$it" }.filter { it != carIp }.map { host ->
@@ -241,6 +241,7 @@ class BridgeService : Service() {
                         s.bind(InetSocketAddress(carIp, 0))  // leave through the hotspot interface
                         s.connect(InetSocketAddress(host, port), 700)
                         opened += s
+                        if (!check(s)) throw IOException("$host is not AutoBridge Phone")
                     } catch (e: IOException) { s.close(); throw e }
                 }
             }
@@ -309,12 +310,17 @@ class BridgeService : Service() {
      * allows car -> phone connections). Tries every address in our /24 at once, for up to ~30 s.
      */
     private fun connectToPhone(carIp: String) {
+        val password = Settings(this).wifi()?.password ?: return
         if (!searching.compareAndSet(false, true)) return
         val pool = java.util.concurrent.Executors.newFixedThreadPool(64)
         try {
             say("Looking for the AutoBridge Phone app on the hotspot…")
             repeat(15) {
-                val socket = sweep(pool, carIp, Wireless.PHONE_CAR_PORT)
+                // Only the phone app that knows the hotspot password: anyone else on the hotspot could answer first.
+                val socket = sweep(pool, carIp, Wireless.PHONE_CAR_PORT) { s ->
+                    s.soTimeout = 3000
+                    Pairing.truck(s, password).also { s.soTimeout = 0 }
+                }
                 if (socket != null) {
                     phoneIp = socket.inetAddress.hostAddress
                     say("Found phone at $phoneIp")
@@ -328,7 +334,7 @@ class BridgeService : Service() {
                 }
                 Thread.sleep(1000)
             }
-            say("Phone app not found. Is AutoBridge Phone installed and running on the phone?")
+            say("Phone app not found. Is AutoBridge Phone 0.8.1 or newer running on the phone, with the hotspot password saved (Password)?")
         } finally {
             pool.shutdownNow()
             searching.set(false)

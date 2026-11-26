@@ -101,7 +101,7 @@ Phone (Android Auto)                           Truck (AutoBridge)
 | Port on the phone | Used for |
 |---|---|
 | 5280 (loopback) | Android Auto → relay |
-| 5300 | truck → relay (the Android Auto session) |
+| 5300 | truck → relay (the Android Auto session; both sides first prove they know the hotspot password) |
 | 5301 / 5302 | log files / "send log" requests |
 | 5303 | a new truck asking for the hotspot details |
 

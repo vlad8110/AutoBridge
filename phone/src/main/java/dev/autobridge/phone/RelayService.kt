@@ -83,7 +83,7 @@ class RelayService : Service() {
         else startForeground(1, n)
         // Must be IPv4 127.0.0.1: the address the car hands Android Auto. getLoopbackAddress() is ::1 on Android.
         listen("Android Auto", "Android Auto on this phone is ready", InetSocketAddress(InetAddress.getByName("127.0.0.1"), AA_PORT)) { offer(aa = it) }
-        listen("car", "The truck connected", InetSocketAddress(CAR_PORT)) { offer(car = it) }
+        listen("car", "", InetSocketAddress(CAR_PORT)) { s -> thread { pair(s) } }
         // Logs and the log-request line only from the truck we're relaying for, one upload at a time.
         listen("car log", "The truck is sending a file", InetSocketAddress(LOG_PORT)) { s -> if (fromCar(s)) thread { saveLog(s) } }
         listen("new truck", "", InetSocketAddress(SETUP_PORT)) { s -> thread { sendSetup(s) } }
@@ -119,7 +119,7 @@ class RelayService : Service() {
         }
     }
 
-    /** Holds whichever side arrives first; a newer socket replaces an older waiting one. */
+    /** Holds whichever side arrives first; a newer socket replaces an older waiting one (car sockets are paired first). */
     private fun offer(aa: Socket? = null, car: Socket? = null) {
         val pair = synchronized(lock) {
             aa?.let { waitingAa?.close(); waitingAa = it }
@@ -133,12 +133,24 @@ class RelayService : Service() {
             Triple(a, c, ++sessions)
         }
         say(RUNNING)
-        // Evidence for locking the relay to the truck: is the truck the hotspot's router? (shortcut: logged only,
-        // not enforced, until a real drive shows it is; then reject car connections from any other address.)
-        val gw = runCatching { getSystemService(android.net.wifi.WifiManager::class.java).dhcpInfo.gateway }.getOrDefault(0)
-        val router = if (gw == 0) null else InetAddress.getByAddress(byteArrayOf(gw.toByte(), (gw shr 8).toByte(), (gw shr 16).toByte(), (gw shr 24).toByte()))
-        say("Truck at ${pair.second.inetAddress?.hostAddress}: ${if (router == pair.second.inetAddress) "the hotspot router" else "not the router (${router?.hostAddress ?: "unknown"})"}")
         pipe(pair.first, pair.second, pair.third)
+    }
+
+    /** Only a truck that proves it knows a saved hotspot password reaches Android Auto. */
+    private fun pair(s: Socket) {
+        val passwords = WifiDetails.savedPasswords(this)
+        val ok = passwords.isNotEmpty() && try {
+            s.soTimeout = 5000
+            Pairing.phone(s, passwords) != null
+        } catch (_: IOException) { false }
+        if (!ok) {
+            runCatching { s.close() }
+            return say(if (passwords.isEmpty()) "The truck connected, but no hotspot password is saved here: tap Password"
+                       else "Ignored a connection from ${s.inetAddress?.hostAddress}: it doesn't know a saved hotspot password")
+        }
+        s.soTimeout = 0
+        say("The truck connected")
+        offer(car = s)
     }
 
     /** A truck without Wi-Fi details asks for the hotspot we're on; only answered once its password is saved here. */

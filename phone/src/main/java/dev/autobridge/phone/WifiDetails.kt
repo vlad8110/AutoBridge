@@ -26,6 +26,8 @@ data class WifiDetails(val ssid: String, val bssid: String, val frequencyMhz: In
         /** Hotspots with a saved password: the trucks this phone is set up for. */
         fun savedHotspots(context: android.content.Context): Set<String> =
             context.getSharedPreferences("hotspots", android.content.Context.MODE_PRIVATE).all.keys
+        fun savedPasswords(context: android.content.Context): List<String> =
+            context.getSharedPreferences("hotspots", android.content.Context.MODE_PRIVATE).all.values.filterIsInstance<String>().filter { it.isNotEmpty() }
         fun setPassword(context: android.content.Context, ssid: String, password: String) =
             context.getSharedPreferences("hotspots", android.content.Context.MODE_PRIVATE).edit().putString(ssid, password).apply()
 
