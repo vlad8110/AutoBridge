@@ -100,7 +100,7 @@ object BarText {
  * hidden door to settings) and the battery ring with the truck.
  */
 class TruckBar(context: Context) : FrameLayout(context) {
-    private val barH = (resources.displayMetrics.heightPixels * 0.14f).roundToInt() - 10
+    private val barH = (resources.displayMetrics.heightPixels * 0.14f).roundToInt() - 15  // everything inside scales from this
     /** The charge door icon is also the hidden door to AutoBridge settings. */
     var onSettings: (() -> Unit)? = null
     private lateinit var card: LinearLayout
