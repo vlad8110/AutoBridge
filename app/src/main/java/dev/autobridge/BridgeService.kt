@@ -57,6 +57,8 @@ class BridgeService : Service() {
         const val PING_SILENCE_MS = 5_000L  // pings come every 1.0 s; the longest gap seen on the truck was 1.7 s
         var onStatus: ((String) -> Unit)? = null
         var onVideoActive: ((Boolean) -> Unit)? = null
+        /** The truck started or stopped requiring distraction-optimized screens (main thread). */
+        var onMoving: ((Boolean) -> Unit)? = null
         /** Projection surface from MainActivity; may exist before or after the service starts. */
         private var surface: Surface? = null
         fun setSurface(s: Surface?) { surface = s; instance?.surfaceChanged() }
@@ -73,7 +75,9 @@ class BridgeService : Service() {
         private set
     private var decoder: VideoDecoder? = null
     private var car: Car? = null
-    @Volatile private var moving = false
+    /** True while the truck requires distraction-optimized screens. Starts true: if the car service never answers, stay locked. */
+    @Volatile var moving = true
+        private set
     @Volatile private var truck = Truck()
     @Volatile private var phoneIp: String? = null
     private var lastAutoLog = 0L
@@ -519,9 +523,9 @@ class BridgeService : Service() {
             car = Car.createCar(this)
             val ux = car!!.getCarManager(Car.CAR_UX_RESTRICTION_SERVICE) as CarUxRestrictionsManager
             moving = ux.currentCarUxRestrictions.isRequiresDistractionOptimization
-            ux.registerListener { r -> moving = r.isRequiresDistractionOptimization; pushSensors() }
+            ux.registerListener { r -> moving = r.isRequiresDistractionOptimization; pushSensors(); main.post { onMoving?.invoke(moving) } }
             (car!!.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager).let { watchTruck(it); TruckProbe.record(it) }
-        }.onFailure { Log.w(TAG, "no car service; reporting parked", it) }
+        }.onFailure { Log.w(TAG, "no car service; reporting moving so driving limits stay on", it) }
     }
 
     /** Battery, range, speed, gear and parking brake. Whatever the truck refuses simply stays unknown. */

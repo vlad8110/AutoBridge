@@ -94,6 +94,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         BridgeService.onStatus = { show(it) }
         BridgeService.onTruck = { truckBar.show(it); settingsPanel.showTruck(it) }
         BridgeService.capture = ::screenshot
+        BridgeService.onMoving = { moving -> if (moving) wifiDialog?.dismiss() }
         truckBar.show(BridgeService.latestTruck)
         BridgeService.instance?.fullForeground()
         ClusterNav.resumed(this)
@@ -112,6 +113,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         BridgeService.onStatus = null
         BridgeService.onTruck = null
         BridgeService.capture = null
+        BridgeService.onMoving = null
         ClusterNav.paused(this)
         BridgeService.onVideoActive = null
         super.onPause()
@@ -223,7 +225,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     // ---- setup ----
 
+    private var wifiDialog: AlertDialog? = null
+
     private fun editWifi() {
+        // Typing isn't allowed while driving; unknown driving state counts as driving.
+        if (BridgeService.instance?.moving != false) return show("Park the truck to edit the hotspot details.")
         val s = Settings(this)
         fun field(hint: String, value: String, password: Boolean = false) = EditText(this).apply {
             this.hint = hint; setText(value); textSize = 20f
@@ -251,7 +257,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 s.forget()
                 show("Wi-Fi details forgotten. Set them here, or open AutoBridge Phone on the hotspot to send them.")
             }
-            .setNegativeButton("Cancel", null).show()
+            .setNegativeButton("Cancel", null).show().also { wifiDialog = it }
     }
 
     private fun askPermissionsThenStart() {

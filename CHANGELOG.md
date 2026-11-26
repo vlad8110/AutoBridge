@@ -3,6 +3,10 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test; the phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page.
 
+## 0.6.9 (truck app only)
+- Driving safety: the hotspot EDIT box (it opens a keyboard) only opens when parked, and closes if the truck starts moving. EQ and the other settings still work while driving.
+- If the truck's car service doesn't answer, AutoBridge now tells Android Auto the truck is moving, so its own driving limits stay on (it used to say parked).
+
 ## 0.6.8 (truck app only)
 - Fixed: music briefly cut out a few minutes in, and whenever the phone's notification shade was pulled down. The truck now holds 0.4 s of music in reserve and rebuilds it if it ever runs dry. Directions and voice still play instantly.
 

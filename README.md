@@ -135,7 +135,7 @@ Signed release builds read the key from environment variables, so no secret live
 
 ```bash
 AB_KEYSTORE=/path/upload.jks AB_KEYSTORE_PASSWORD=... \
-  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=47 -PversionName=0.6.8
+  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=48 -PversionName=0.6.9
 ```
 
 Tests: `./gradlew :app:testDebugUnitTest :phone:testDebugUnitTest`.
