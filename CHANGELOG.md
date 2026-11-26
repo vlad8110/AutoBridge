@@ -3,6 +3,12 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test; the phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page.
 
+## 0.7.4 (truck app only)
+- Equalizer: each band is now a column of LED meter lights (green, yellow, red) that move with the music actually playing, like a stereo's level meter. They dim when EQ is off and fall dark when the music stops. Measured only while the EQ page is open.
+- Equalizer: an Android Auto button next to Done goes straight back to Android Auto.
+- Settings: Equalizer and Android Auto are side-by-side buttons with icons; Close app moved under Send log.
+- The truck bar is 5 px shorter, everything in it scaled to match.
+
 ## 0.7.3 (truck app only)
 - Turn-by-turn on the dashboard comes back by itself if the truck drops it during navigation (seen when the phone's Bluetooth reconnects).
 - Truck bar: says each thing once ("1 h 45 min left", limit on the meter, Charging under the port) and lines up with Android Auto's edges.

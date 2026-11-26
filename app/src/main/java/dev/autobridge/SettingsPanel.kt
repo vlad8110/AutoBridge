@@ -66,9 +66,10 @@ class SettingsPanel(
                 addView(facts("VERSION", version), LinearLayout.LayoutParams(0, -2, 1f))
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(28) })
             addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
-            addView(button("Equalizer") { eqPanel.open() }, LinearLayout.LayoutParams(-1, px(120)).apply { bottomMargin = px(22) })
-            addView(button("Android Auto", primary = true) { close() }, LinearLayout.LayoutParams(-1, px(120)))
-            addView(button("Exit") { onExit() }, LinearLayout.LayoutParams(-1, px(120)).apply { topMargin = px(22) })
+            addView(LinearLayout(context).apply {
+                addView(bigButton(Glyph.EQ, "Equalizer") { eqPanel.open() }, LinearLayout.LayoutParams(0, px(250), 1f))
+                addView(bigButton(Glyph.AA, "Android Auto", primary = true) { close() }, LinearLayout.LayoutParams(0, px(250), 1f).apply { marginStart = px(22) })
+            }, LinearLayout.LayoutParams(-1, -2))
         }
         val right = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -99,6 +100,12 @@ class SettingsPanel(
                     BridgeService.instance?.sendLogs("settings") ?: toast("AutoBridge isn't running yet")
                 }), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = px(22) })
             })
+            // Exit sits under Send log, away from the way back to Android Auto.
+            addView(LinearLayout(context).apply {
+                addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
+                addView(row(text(40f).apply { text = "Close app" }, text(26f, MUTED).apply { text = "Until you open it again" },
+                    button("Exit") { onExit() }), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = px(22) })
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(22) })
         }
         addView(LinearLayout(context).apply {
             setPadding(px(64), px(90), px(64), px(40))
@@ -209,7 +216,16 @@ class SettingsPanel(
         return box
     }
 
-    private enum class Glyph { BAR, STATUS, HD }
+    private enum class Glyph { BAR, STATUS, HD, EQ, AA }
+
+    /** A square button: icon over its label, in the truck's boxy style. */
+    private fun bigButton(glyph: Glyph, label: String, primary: Boolean = false, onClick: () -> Unit) = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER
+        background = TruckBar.chamfer(if (primary) NAVY else BLACK, if (primary) BLUE else OUTLINE, px(26).toFloat())
+        addView(GlyphView(context, glyph).apply { color = if (primary) BLUE else WHITE }, LinearLayout.LayoutParams(px(96), px(96)))
+        addView(text(32f, if (primary) BLUE else WHITE).apply { text = label }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(22) })
+        setOnClickListener { onClick() }
+    }
 
     /** The tile pictures: a screen with the bar at the bottom, the status bar at the top, or "HD". */
     private class GlyphView(c: Context, private val glyph: Glyph) : View(c) {
@@ -217,13 +233,26 @@ class SettingsPanel(
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         override fun onDraw(c: Canvas) {
             val u = width / 48f
-            p.color = color; p.style = Paint.Style.STROKE; p.strokeWidth = 3 * u
+            p.color = color; p.style = Paint.Style.STROKE; p.strokeWidth = 3 * u; p.strokeCap = Paint.Cap.ROUND
+            if (glyph == Glyph.EQ) {  // three sliders, knobs at different heights
+                for ((x, k) in listOf(10f to 30f, 24f to 15f, 38f to 25f)) {
+                    p.style = Paint.Style.STROKE; c.drawLine(x * u, 6 * u, x * u, 42 * u, p)
+                    p.style = Paint.Style.FILL; p.color = if (color == BLUE) NAVY else BLACK; c.drawCircle(x * u, k * u, 5 * u, p)
+                    p.style = Paint.Style.STROKE; p.color = color; c.drawCircle(x * u, k * u, 5 * u, p)
+                }
+                return
+            }
             c.drawRect(RectF(4 * u, 8 * u, 44 * u, 40 * u), p)
             p.style = Paint.Style.FILL
             when (glyph) {
                 Glyph.BAR -> c.drawRect(8 * u, 30 * u, 40 * u, 36 * u, p)
                 Glyph.STATUS -> c.drawRect(8 * u, 12 * u, 40 * u, 17 * u, p)
                 Glyph.HD -> { p.textSize = 13 * u; p.textAlign = Paint.Align.CENTER; p.typeface = Typeface.DEFAULT_BOLD; c.drawText("HD", 24 * u, 29 * u, p) }
+                Glyph.AA -> {  // a screen with a play shape, on a stand
+                    c.drawPath(android.graphics.Path().apply { moveTo(20 * u, 16 * u); lineTo(31 * u, 24 * u); lineTo(20 * u, 32 * u); close() }, p)
+                    p.style = Paint.Style.STROKE; c.drawLine(16 * u, 45 * u, 32 * u, 45 * u, p)
+                }
+                else -> {}
             }
         }
     }

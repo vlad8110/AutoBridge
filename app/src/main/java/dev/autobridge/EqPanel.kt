@@ -66,10 +66,10 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         addView(page, LayoutParams(-1, -1))
     }
 
-    fun open() { bands.gains = eq.gains.copyOf(); refresh(); visibility = VISIBLE }
+    fun open() { eq.metering = true; bands.gains = eq.gains.copyOf(); refresh(); visibility = VISIBLE; bands.invalidate() }
 
     /** True if the page was open. */
-    fun close(): Boolean = (visibility == VISIBLE).also { visibility = GONE }
+    fun close(): Boolean = (visibility == VISIBLE).also { visibility = GONE; eq.metering = false }
 
     private fun save(preset: String) {
         s.eqGains = Equalizer.encode(eq.gains); s.eqPreset = preset
@@ -127,12 +127,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                 p.style = Paint.Style.FILL; p.color = MUTED; p.textSize = 24f * k; p.textAlign = Paint.Align.RIGHT
                 c.drawText(if (db > 0) "+${db.toInt()}" else "${db.toInt()}", left - 24f * k, y(db) + 8f * k, p)
             }
-            // tracks and fills
-            for (i in gains.indices) {
-                p.style = Paint.Style.STROKE; p.strokeCap = Paint.Cap.ROUND
-                p.strokeWidth = 10f * k; p.color = 0xFF202124.toInt(); c.drawLine(x(i), top, x(i), bottom, p)
-                p.color = (accent and 0xFFFFFF) or 0x66000000; c.drawLine(x(i), y(0f), x(i), y(gains[i]), p)
-            }
+            meter(c)
             // curve through the knobs
             val path = Path().apply {
                 moveTo(left, y(gains.first()))
@@ -143,7 +138,8 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                 }
                 lineTo(right, y(gains.last()))
             }
-            p.style = Paint.Style.STROKE; p.strokeWidth = 5f * k; p.color = accent; c.drawPath(path, p)
+            p.style = Paint.Style.STROKE; p.strokeWidth = 11f * k; p.color = BLACK; c.drawPath(path, p)  // dark edge: readable over lit lights
+            p.strokeWidth = 5f * k; p.color = accent; c.drawPath(path, p)
             // knobs, values, labels
             for (i in gains.indices) {
                 p.style = Paint.Style.FILL; p.color = BLACK; c.drawCircle(x(i), y(gains[i]), 24f * k, p)
@@ -156,6 +152,34 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                 c.drawText(Equalizer.LABELS[i], x(i), bottom + 64f * k, p)
             }
             p.textSize = 22f * k; p.textAlign = Paint.Align.RIGHT; c.drawText("Hz", right, bottom + 100f * k, p)
+        }
+
+        /** What each column shows; jumps up with the music and falls back slowly, like a stereo's lights. */
+        private val shown = FloatArray(Equalizer.BANDS.size)
+        private val seg = RectF(); private val halo = RectF()
+
+        /** Each band's track is a column of LED lights: green, then yellow, then red at the top. */
+        private fun meter(c: Canvas) {
+            val eq = Equalizer.music
+            val live = eq.metering && System.nanoTime() / 1_000_000 - eq.levelsAt < 250  // music stopped: let them fall
+            val segH = (bottom - top) / SEGMENTS
+            val half = (right - left) / gains.size * 0.33f
+            p.style = Paint.Style.FILL
+            for (i in gains.indices) {
+                val target = if (live) eq.levels[i] else 0f
+                shown[i] = if (target > shown[i]) target else shown[i] * 0.88f
+                val lit = (shown[i] * SEGMENTS).roundToInt()
+                for (n in 0 until SEGMENTS) {
+                    seg.set(x(i) - half, bottom - (n + 1) * segH + 4 * k, x(i) + half, bottom - n * segH - 4 * k)
+                    if (n >= lit) { p.color = LED_OFF; c.drawRoundRect(seg, 3 * k, 3 * k, p); continue }
+                    val led = when { n < SEGMENTS * 0.6f -> LED_GREEN; n < SEGMENTS * 0.85f -> LED_YELLOW; else -> LED_RED }
+                    val a = if (dim) 0x66 else 0xFF  // EQ off: the lights dim with the curve
+                    halo.set(seg.left - 5 * k, seg.top - 5 * k, seg.right + 5 * k, seg.bottom + 5 * k)
+                    p.color = (led and 0xFFFFFF) or ((a / 5) shl 24); c.drawRoundRect(halo, 8 * k, 8 * k, p)  // soft glow
+                    p.color = (led and 0xFFFFFF) or (a shl 24); c.drawRoundRect(seg, 3 * k, 3 * k, p)
+                }
+            }
+            if (eq.metering) postInvalidateDelayed(33)  // ~30 fps, only while the EQ page is open
         }
 
         private fun fmt(g: Float) = if (g == g.roundToInt().toFloat()) "${g.roundToInt()}" else "%.1f".format(g)
@@ -184,5 +208,11 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         const val NAVY = 0xFF0D1B2E.toInt()
         const val BLACK = 0xFF000000.toInt()
         const val OUTLINE = 0xFF8E939B.toInt()
+        // A stereo level meter's lights.
+        const val SEGMENTS = 18
+        const val LED_GREEN = 0xFF3CF05A.toInt()
+        const val LED_YELLOW = 0xFFFFD21A.toInt()
+        const val LED_RED = 0xFFFF2B3C.toInt()
+        const val LED_OFF = 0xFF151816.toInt()
     }
 }

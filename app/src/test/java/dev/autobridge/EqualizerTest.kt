@@ -65,4 +65,12 @@ class EqualizerTest {
         assertArrayEquals(g, Equalizer.decode(Equalizer.encode(g)), 0f)
         assertTrue(Equalizer.decode("junk").all { it == 0f })
     }
+
+    @Test fun theMeterLightsTheBandThatIsPlaying() {
+        val eq = Equalizer().apply { metering = true }
+        eq.process(sine(1000.0, 16000.0))
+        val loudest = eq.levels.indices.maxByOrNull { eq.levels[it] }
+        assertEquals(5, loudest)  // the 1 kHz band
+        assertTrue(eq.levels[0] < eq.levels[5] - 0.2f)  // 32 Hz stays far lower
+    }
 }

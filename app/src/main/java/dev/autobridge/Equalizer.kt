@@ -23,9 +23,59 @@ class Equalizer(private val rate: Int = 48_000) {
     private val state = Array(2) { Array(BANDS.size) { DoubleArray(4) } }  // per channel: x1 x2 y1 y2
     private var preamp = 1.0
 
-    /** Processes interleaved stereo 16-bit little-endian PCM in place. */
+    /** Processes interleaved stereo 16-bit little-endian PCM in place, then meters it while the EQ page is open. */
     fun process(pcm: ByteArray) {
-        if (!enabled) return
+        if (enabled) equalize(pcm)
+        if (metering) meter(pcm)
+    }
+
+    // ---- the EQ page's light meter ----
+
+    /** Set while the EQ page is open; otherwise metering costs nothing. */
+    @Volatile var metering = false
+    /** Loudness per band, 0..1 (-54..0 dBFS), from what actually plays. Written by the audio thread; read by the UI. */
+    val levels = FloatArray(BANDS.size)
+    /** When [levels] last changed (System.nanoTime ms): the UI lets the lights fall once the music stops. */
+    @Volatile var levelsAt = 0L
+    private val meterCoef = Array(BANDS.size) { bandPass(BANDS[it], Q) }
+    private val meterState = Array(BANDS.size) { DoubleArray(4) }
+    private val meterSum = DoubleArray(BANDS.size)
+    private var meterFrames = 0
+
+    /** Band-pass each band on the mono mix (after the EQ, so the lights show what you hear), RMS every ~33 ms. */
+    private fun meter(pcm: ByteArray) {
+        var i = 0
+        while (i + 3 < pcm.size) {
+            val l = (pcm[i].toInt() and 0xff) or (pcm[i + 1].toInt() shl 8)
+            val r = (pcm[i + 2].toInt() and 0xff) or (pcm[i + 3].toInt() shl 8)
+            val x = (l + r) / 65536.0
+            for (b in meterCoef.indices) {
+                val c = meterCoef[b]; val s = meterState[b]
+                val y = c[0] * x + c[1] * s[0] + c[2] * s[1] - c[3] * s[2] - c[4] * s[3]
+                s[1] = s[0]; s[0] = x; s[3] = s[2]; s[2] = y
+                meterSum[b] += y * y
+            }
+            i += 4
+            if (++meterFrames == rate / 30) {
+                for (b in levels.indices) {
+                    val db = 10 * kotlin.math.log10(meterSum[b] / meterFrames * 2 + 1e-12)  // *2: a full-scale sine reads 0 dB
+                    levels[b] = ((db + 54) / 54).toFloat().coerceIn(0f, 1f)
+                    meterSum[b] = 0.0
+                }
+                meterFrames = 0
+                levelsAt = System.nanoTime() / 1_000_000
+            }
+        }
+    }
+
+    private fun bandPass(f: Double, q: Double): DoubleArray {  // RBJ band-pass, 0 dB at the centre
+        val w = 2 * PI * f / rate
+        val alpha = sin(w) / (2 * q)
+        val a0 = 1 + alpha
+        return doubleArrayOf(alpha / a0, 0.0, -alpha / a0, -2 * cos(w) / a0, (1 - alpha) / a0)
+    }
+
+    private fun equalize(pcm: ByteArray) {
         if (dirty) rebuild()
         if (active.isEmpty()) return
         var i = 0
