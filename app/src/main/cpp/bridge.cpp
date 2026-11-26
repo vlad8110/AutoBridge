@@ -92,6 +92,11 @@ struct Listener {
         onNavLegacyTurn = e->GetMethodID(c, "onNavLegacyTurn", "(IIILjava/lang/String;)V");
         onNavDistance = e->GetMethodID(c, "onNavDistance", "(IIIIIIIILjava/lang/String;)V");
     }
+    // A Kotlin exception left pending poisons later JNI calls and kills the app when the thread detaches: log and drop it.
+    template <typename... A> void call(jmethodID m, A... a) {
+        env->CallVoidMethod(obj, m, a...);
+        if (env->ExceptionCheck()) { env->ExceptionDescribe(); env->ExceptionClear(); }
+    }
     jstring str(const std::string &v, bool has) { return has ? env->NewStringUTF(v.c_str()) : nullptr; }
     void drop(std::initializer_list<jobject> refs) { for (auto r : refs) if (r) env->DeleteLocalRef(r); }
     void nowPlaying(const std::string *song, const std::string *artist, const std::string *album, const std::string *art, int durationSec) {
@@ -101,24 +106,24 @@ struct Listener {
             d = env->NewByteArray((jsize) art->size());
             env->SetByteArrayRegion(d, 0, (jsize) art->size(), reinterpret_cast<const jbyte *>(art->data()));
         }
-        env->CallVoidMethod(obj, onNowPlaying, a, b, c, d, durationSec);
+        call(onNowPlaying, a, b, c, d, durationSec);
         drop({a, b, c, d});
     }
-    void playback(int state, int positionSec) { env->CallVoidMethod(obj, onPlayback, state, positionSec); }
-    void navStatus(int status) { env->CallVoidMethod(obj, onNavStatus, status); }
+    void playback(int state, int positionSec) { call(onPlayback, state, positionSec); }
+    void navStatus(int status) { call(onNavStatus, status); }
     void navStep(int type, int exit, const std::string &road, const std::string &cue, const std::string &dest) {
         jstring a = str(road, !road.empty()), b = str(cue, !cue.empty()), c = str(dest, !dest.empty());
-        env->CallVoidMethod(obj, onNavStep, type, exit, a, b, c);
+        call(onNavStep, type, exit, a, b, c);
         drop({a, b, c});
     }
     void navLegacyTurn(int event, int side, int exit, const std::string &road) {
         jstring a = str(road, !road.empty());
-        env->CallVoidMethod(obj, onNavLegacyTurn, event, side, exit, a);
+        call(onNavLegacyTurn, event, side, exit, a);
         drop({a});
     }
     void navDistance(int m, int e3, int unit, int sec, int destM, int destE3, int destUnit, int destSec, const std::string &road) {
         jstring a = str(road, !road.empty());
-        env->CallVoidMethod(obj, onNavDistance, m, e3, unit, sec, destM, destE3, destUnit, destSec, a);
+        call(onNavDistance, m, e3, unit, sec, destM, destE3, destUnit, destSec, a);
         drop({a});
     }
     jbyteArray bytes(const DataConstBuffer &b) {
@@ -128,20 +133,20 @@ struct Listener {
     }
     void video(const DataConstBuffer &b, uint64_t ts) {
         jbyteArray a = bytes(b);
-        env->CallVoidMethod(obj, onVideo, a, (jlong) ts);
+        call(onVideo, a, (jlong) ts);
         env->DeleteLocalRef(a);
     }
     void audio(int stream, const DataConstBuffer &b) {
         jbyteArray a = bytes(b);
-        env->CallVoidMethod(obj, onAudio, stream, a);
+        call(onAudio, stream, a);
         env->DeleteLocalRef(a);
     }
-    void audioState(int stream, bool on) { env->CallVoidMethod(obj, onAudioState, stream, on); }
-    void mic(bool open) { env->CallVoidMethod(obj, onMic, open); }
-    void videoFocus(bool projected) { env->CallVoidMethod(obj, onVideoFocus, projected); }
+    void audioState(int stream, bool on) { call(onAudioState, stream, on); }
+    void mic(bool open) { call(onMic, open); }
+    void videoFocus(bool projected) { call(onVideoFocus, projected); }
     void ended(const std::string &why) {
         jstring s = env->NewStringUTF(why.c_str());
-        env->CallVoidMethod(obj, onEnded, s);
+        call(onEnded, s);
         env->DeleteLocalRef(s);
     }
 };

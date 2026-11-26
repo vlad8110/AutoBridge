@@ -51,6 +51,12 @@ class RelayService : Service() {
     private var waitingCar: Socket? = null
     @Volatile private var running = true
     private val servers = mutableListOf<ServerSocket>()
+    /** The address the truck's session came from; only it may send logs or hold the log-request line. */
+    @Volatile private var carAddress: InetAddress? = null
+
+    private fun fromCar(s: Socket) = (s.inetAddress == carAddress).also {
+        if (!it) { say("Ignored a connection from ${s.inetAddress?.hostAddress}: not the truck"); runCatching { s.close() } }
+    }
 
     override fun onBind(intent: Intent?) = null
 
@@ -64,10 +70,11 @@ class RelayService : Service() {
         else startForeground(1, n)
         // Must be IPv4 127.0.0.1: the address the car hands Android Auto. getLoopbackAddress() is ::1 on Android.
         listen("Android Auto", InetSocketAddress(InetAddress.getByName("127.0.0.1"), AA_PORT)) { offer(aa = it) }
-        listen("car", InetSocketAddress(CAR_PORT)) { offer(car = it) }
-        listen("car log", InetSocketAddress(LOG_PORT)) { s -> thread { saveLog(s) } }
+        listen("car", InetSocketAddress(CAR_PORT)) { carAddress = it.inetAddress; offer(car = it) }
+        // Logs and the log-request line only from the truck we're relaying for, one upload at a time.
+        listen("car log", InetSocketAddress(LOG_PORT)) { s -> if (fromCar(s)) saveLog(s) }
         listen("new truck", InetSocketAddress(SETUP_PORT)) { s -> thread { sendSetup(s) } }
-        listen("car log line", InetSocketAddress(LOG_REQUEST_PORT)) { s -> carLine?.let { runCatching { it.close() } }; carLine = s }
+        listen("car log line", InetSocketAddress(LOG_REQUEST_PORT)) { s -> if (fromCar(s)) { carLine?.let { runCatching { it.close() } }; carLine = s } }
         say("Ready. Waiting for the car.")
     }
 

@@ -3,6 +3,17 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test; the phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page.
 
+## 0.7.0
+Security and reliability fixes from a full code audit.
+- Phone app: only hands a truck the hotspot details when it's on that truck's network (same router and frequency), so another device on home or café Wi-Fi can't ask for the password.
+- Phone app: accepts logs and screenshots only from the truck it's connected to, one at a time, without reserving memory for what a sender merely claims.
+- Truck: the automatic Wi-Fi check no longer changes saved hotspot details by itself; it asks you to tap TEST.
+- Truck: no more screen freezes while the Wi-Fi check waits on the network.
+- Truck: a connection that drops during the handshake no longer sits at "connected" forever; it gives up after 20 s and retries.
+- Truck: a Wi-Fi blip while connecting no longer switches the picture to 1080p for good.
+- Truck: GPS stops when you exit AutoBridge.
+- Truck: an error inside a phone callback no longer crashes the app when the session ends.
+
 ## 0.6.9 (truck app only)
 - Driving safety: the hotspot EDIT box (it opens a keyboard) only opens when parked, and closes if the truck starts moving. EQ and the other settings still work while driving.
 - If the truck's car service doesn't answer, AutoBridge now tells Android Auto the truck is moving, so its own driving limits stay on (it used to say parked).

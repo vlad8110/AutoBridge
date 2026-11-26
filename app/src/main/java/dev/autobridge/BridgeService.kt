@@ -54,6 +54,8 @@ class BridgeService : Service() {
         @Volatile var phoneName: String? = null
         const val EXTRA_BOOT = "boot"
         /** Phone silent this long = gone. Its pings normally come every second or so (logged at session start). */
+        /** No first ping this long after connecting: the handshake died (Wi-Fi dropped mid-way). */
+        const val FIRST_PING_MS = 20_000L
         const val PING_SILENCE_MS = 5_000L  // pings come every 1.0 s; the longest gap seen on the truck was 1.7 s
         var onStatus: ((String) -> Unit)? = null
         var onVideoActive: ((Boolean) -> Unit)? = null
@@ -95,6 +97,9 @@ class BridgeService : Service() {
     @Volatile private var busyAt = 0L
     @Volatile private var invitedAt = 0L
     private val searching = java.util.concurrent.atomic.AtomicBoolean(false)
+    /** When the current session started, and whether the phone has pinged in it yet (it then got past the handshake). */
+    @Volatile private var startedAt = 0L
+    @Volatile private var pinged = false
 
     override fun onBind(intent: Intent?) = null
 
@@ -138,9 +143,12 @@ class BridgeService : Service() {
         val lm = getSystemService(LocationManager::class.java)
         if (!lm.allProviders.contains(LocationManager.GPS_PROVIDER)) { Log.w(TAG, "no GPS provider on this car"); return }
         watchingGps = true
-        lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, LocationListener { l -> sendLocation(l) }, Looper.getMainLooper())
+        lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, gps, Looper.getMainLooper())
         Log.i(TAG, "truck GPS: watching")
     }
+
+    /** Kept so onDestroy can remove it; otherwise an exited service keeps the GPS on and stays in memory. */
+    private val gps = LocationListener { l -> sendLocation(l) }
 
     private fun sendLocation(l: Location) {
         val h = handle.takeIf { it != 0L } ?: return
@@ -155,6 +163,7 @@ class BridgeService : Service() {
 
     override fun onDestroy() {
         running = false
+        if (watchingGps) runCatching { getSystemService(LocationManager::class.java).removeUpdates(gps) }
         runCatching { btServer?.close() }
         runCatching { logLine?.close() }
         runCatching { btLink?.close() }
@@ -262,8 +271,10 @@ class BridgeService : Service() {
 
     /** True if the phone app answered. [quiet]: say nothing when it isn't found. */
     private var lastCheck: String? = null
+    /** Not the service's own lock: say() takes that one on the main thread, and a check can wait seconds on the network. */
+    private val wifiCheckLock = Any()
 
-    @Synchronized private fun checkWifi(quiet: Boolean): Boolean {
+    private fun checkWifi(quiet: Boolean): Boolean = synchronized(wifiCheckLock) {
         val car = carIp() ?: return false.also { if (!quiet) { lastCheck = "Wi-Fi check: the truck's hotspot is off"; say(lastCheck!!) } }
         val pool = java.util.concurrent.Executors.newFixedThreadPool(64)
         val reply = try {
@@ -275,11 +286,15 @@ class BridgeService : Service() {
         if (reply == null && quiet) return false
         val s = Settings(this)
         val saved = s.wifi()
-        val (fix, message) = Wireless.checkSetup(reply, saved)
+        val (found, checked) = Wireless.checkSetup(reply, saved)
+        // Only TEST or a brand-new truck may change saved details: on its own, a check could be answered by any
+        // device on the hotspot pretending to be the phone.
+        val fix = found?.takeIf { !quiet || saved == null }
+        val message = if (found != null && fix == null) "Wi-Fi check: your phone reports different hotspot details; tap TEST in settings to update them" else checked
         fix?.let { s.ssid = it.ssid; s.password = it.password; s.bssid = it.bssid }
         // TEST always reports. On its own, a working truck only speaks when it fixed something, and a new truck
         // (asking every 10 s) doesn't repeat itself.
-        if (!quiet || fix != null || (saved == null && message != lastCheck)) say(message)
+        if (!quiet || found != null || (saved == null && message != lastCheck)) say(message)
         lastCheck = message
         return reply != null
     }
@@ -341,7 +356,9 @@ class BridgeService : Service() {
     private val watchdog = object : Runnable {
         override fun run() {
             val h = handle.takeIf { it != 0L } ?: return
-            if (Native.sincePingMs(h) > PING_SILENCE_MS) {
+            val since = Native.sincePingMs(h)  // -1 until the first ping
+            if (since >= 0) pinged = true
+            if (since > PING_SILENCE_MS || (since < 0 && System.currentTimeMillis() - startedAt > FIRST_PING_MS)) {
                 endSession()
                 say("Disconnected: the phone stopped answering (Wi-Fi lost?)")
                 busyAt = 0  // ask the phone to rejoin right away, not after the usual 5 s settle
@@ -363,6 +380,7 @@ class BridgeService : Service() {
         }.also { d -> surface?.let { d.attach(it) } }
         audio.holdFocus()
         NowPlaying.connected(this)
+        startedAt = System.currentTimeMillis(); pinged = false
         handle = Native.start(fd, plan.toArray(), truck.toArray(), gpsAllowed(), Callbacks(++sessionId, plan))
         main.removeCallbacks(watchdog); main.postDelayed(watchdog, 2000)
         Log.i(TAG, "video offered: ${if (plan.hevc) "H.265" else "H.264"} " + plan.configs.joinToString { "${it.codecW}x${it.codecH}" })
@@ -491,13 +509,14 @@ class BridgeService : Service() {
             }
         }
         override fun onEnded(reason: String) {
+            val handshakeDone = pinged || handle.takeIf { it != 0L }?.let { Native.sincePingMs(it) >= 0 } == true
             main.post {
                 if (id == sessionId) {
                     endSession()
                     say("Disconnected: $reason")
                     if (reason != "phone disconnected") {
                         // H.265 never produced a picture: use the proven 1080p H.264 from the next connection on.
-                        if (plan.hevc && firstFrame) {
+                        if (plan.hevc && firstFrame && handshakeDone) {  // a drop mid-handshake isn't H.265's fault
                             Settings(this@BridgeService).hevcFailed = true
                             say("Sharper picture (H.265) didn't start; using 1080p next time")
                         }

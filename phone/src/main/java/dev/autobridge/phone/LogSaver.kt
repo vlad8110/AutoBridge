@@ -18,7 +18,6 @@ object LogSaver {
 
     fun folder(context: Context): Uri? = prefs(context).getString("folder", null)?.let(Uri::parse)
     fun setFolder(context: Context, uri: Uri) = prefs(context).edit().putString("folder", uri.toString()).apply()
-    var lastSaved: String? = null; private set
 
     /**
      * Reads one log off [input]: "AUTOBRIDGE-LOG\n", the file name, its length, then the bytes
@@ -27,15 +26,15 @@ object LogSaver {
     @Throws(IOException::class)
     fun receive(context: Context, input: InputStream): String {
         val (name, size) = header(input)
-        val bytes = ByteArray(size)
-        var read = 0
-        while (read < size) {
-            val n = input.read(bytes, read, size - read)
+        // Grows as bytes really arrive: a peer that only claims 20 MB can't make us reserve it.
+        val out = java.io.ByteArrayOutputStream(minOf(size, 64 * 1024))
+        val buf = ByteArray(64 * 1024)
+        while (out.size() < size) {
+            val n = input.read(buf, 0, minOf(buf.size, size - out.size()))
             if (n < 0) throw IOException("log cut short")
-            read += n
+            out.write(buf, 0, n)
         }
-        save(context, name, bytes)
-        lastSaved = name
+        save(context, name, out.toByteArray())
         return name
     }
 

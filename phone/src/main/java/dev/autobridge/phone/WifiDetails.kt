@@ -4,7 +4,7 @@ import android.annotation.SuppressLint
 import android.net.wifi.WifiManager
 
 /** What a car's AutoBridge needs about its hotspot (everything except the password). */
-data class WifiDetails(val ssid: String, val bssid: String, val frequencyMhz: Int) {
+data class WifiDetails(val ssid: String, val bssid: String, val frequencyMhz: Int, val gateway: Int = 0) {
     val channel get() = channelOf(frequencyMhz)
     val band get() = when {
         frequencyMhz in 2400..2500 -> "2.4 GHz"
@@ -48,21 +48,22 @@ data class WifiDetails(val ssid: String, val bssid: String, val frequencyMhz: In
         /** Saved whenever the app is open on a hotspot: Android hides the name from the relay running in the background. */
         fun remember(context: android.content.Context, d: WifiDetails) =
             context.getSharedPreferences("lastHotspot", android.content.Context.MODE_PRIVATE).edit()
-                .putString("ssid", d.ssid).putString("bssid", d.bssid).putInt("mhz", d.frequencyMhz).apply()
+                .putString("ssid", d.ssid).putString("bssid", d.bssid).putInt("mhz", d.frequencyMhz).putInt("gateway", d.gateway).apply()
         fun remembered(context: android.content.Context): WifiDetails? =
             context.getSharedPreferences("lastHotspot", android.content.Context.MODE_PRIVATE).let { p ->
-                WifiDetails(p.getString("ssid", null) ?: return null, p.getString("bssid", "")!!, p.getInt("mhz", 0))
+                WifiDetails(p.getString("ssid", null) ?: return null, p.getString("bssid", "")!!, p.getInt("mhz", 0), p.getInt("gateway", 0))
             }
 
         /**
-         * The hotspot to tell a truck about: what Android shows now, else the one last seen with the app open,
-         * unless the radio is plainly on another network (its frequency, which Android doesn't hide, differs).
+         * The hotspot to tell a truck about: what Android shows now, else the one last seen with the app open, but only
+         * when the phone is plainly on that same network: same router address and frequency, which Android doesn't hide.
+         * Otherwise any device on, say, home Wi-Fi on a common channel could ask for the truck's password.
          */
         fun pick(now: WifiDetails?, last: WifiDetails?): WifiDetails? = when {
             now != null && now.usable -> now
-            last == null -> null
-            now != null && now.frequencyMhz > 0 && now.frequencyMhz != last.frequencyMhz -> null
-            else -> last
+            now == null || last == null -> null
+            now.gateway != 0 && now.gateway == last.gateway && now.frequencyMhz == last.frequencyMhz -> last
+            else -> null
         }
 
         fun channelOf(mhz: Int): Int = when {
@@ -82,7 +83,7 @@ data class WifiDetails(val ssid: String, val bssid: String, val frequencyMhz: In
         fun current(wifi: WifiManager): WifiDetails? {
             val info = wifi.connectionInfo ?: return null
             if (info.networkId == -1 && info.bssid == null) return null
-            return WifiDetails(info.ssid.trim('"'), info.bssid ?: "", info.frequency)
+            return WifiDetails(info.ssid.trim('"'), info.bssid ?: "", info.frequency, wifi.dhcpInfo?.gateway ?: 0)
         }
     }
 }

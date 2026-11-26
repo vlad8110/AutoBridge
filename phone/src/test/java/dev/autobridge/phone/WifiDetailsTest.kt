@@ -54,14 +54,17 @@ class SetupMessageTest {
         )) assert(reply.first.startsWith("AUTOBRIDGE-WIFI-ERROR\n") && hint in reply.first) { reply.first }
     }
 
-    @Test fun inTheBackgroundTheLastSeenHotspotIsUsed() {
-        val last = WifiDetails("MyTruck", "02:1a:2b:3c:4d:5e", 5805)
-        val hidden = WifiDetails("<unknown ssid>", "02:00:00:00:00:00", 5805)
+    @Test fun inTheBackgroundTheLastSeenHotspotIsUsedOnlyOnTheSameNetwork() {
+        val last = WifiDetails("MyTruck", "02:1a:2b:3c:4d:5e", 5805, gateway = 0x0101a8c0)
+        val hidden = WifiDetails("<unknown ssid>", "02:00:00:00:00:00", 5805, gateway = 0x0101a8c0)
         assertEquals(last, WifiDetails.pick(hidden, last))
-        assertEquals(last, WifiDetails.pick(null, last))
         val shown = WifiDetails("Other", "02:1a:2b:3c:4d:5e", 2437)
         assertEquals(shown, WifiDetails.pick(shown, last))
-        org.junit.Assert.assertNull(WifiDetails.pick(hidden.copy(frequencyMhz = 2437), last))  // another network
+        // Home Wi-Fi on the same channel but another router: the truck's password must not be handed out there.
+        org.junit.Assert.assertNull(WifiDetails.pick(hidden.copy(gateway = 0x0100a8c0), last))
+        org.junit.Assert.assertNull(WifiDetails.pick(hidden.copy(frequencyMhz = 2437), last))
+        org.junit.Assert.assertNull(WifiDetails.pick(hidden.copy(gateway = 0), last.copy(gateway = 0)))  // unknown router
+        org.junit.Assert.assertNull(WifiDetails.pick(null, last))
         org.junit.Assert.assertNull(WifiDetails.pick(hidden, null))
     }
 }
