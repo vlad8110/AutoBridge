@@ -35,7 +35,8 @@ data class WifiDetails(val ssid: String, val bssid: String, val frequencyMhz: In
         fun setupReply(located: Boolean, d: WifiDetails?, password: String?): Pair<String, String> {
             val problem = when {
                 !located -> "allow Location for AutoBridge Phone, so it can read the hotspot name"
-                d == null -> "the phone isn't on Wi-Fi"
+                // The truck reached us over its hotspot, so we are on Wi-Fi; null means Android hid it and we never saw it.
+                d == null -> "open AutoBridge Phone on the phone for a few seconds, so it can read the hotspot name"
                 d.ssid == "<unknown ssid>" || d.bssid.isEmpty() || d.bssid == "02:00:00:00:00:00" -> "open AutoBridge Phone on the phone for a few seconds, so it can read the hotspot name"
                 password == null -> "tap Password in AutoBridge Phone and type the ${d.ssid} password"
                 else -> null

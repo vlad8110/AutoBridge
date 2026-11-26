@@ -3,6 +3,11 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test; the phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page.
 
+## 0.6.7
+- Quieter Wi-Fi check: a truck that already works only reports when it fixed something (TEST still reports everything).
+- When the phone can't rejoin the hotspot, the message now says it may just be out of range.
+- Phone app: no longer says "isn't on Wi-Fi" when Android hides the hotspot from it; it asks you to open the app instead.
+
 ## 0.6.6 (truck app only)
 - Screenshots now capture the whole truck screen: Android Auto plus the truck bar, and the settings or EQ page when one is open.
 

@@ -244,8 +244,7 @@ class BridgeService : Service() {
         while (running) {
             val ip = phoneIp
             if (Settings(this).wifi() == null || (ip != null && ip != checkedIp)) {
-                val quiet = Settings(this).wifi() == null  // a new truck asks every 10 s; only speak when the phone answers
-                runCatching { checkWifi(quiet) }.onSuccess { if (it && ip != null) checkedIp = ip }
+                runCatching { checkWifi(quiet = true) }.onSuccess { if (it && ip != null) checkedIp = ip }
             }
             Thread.sleep(10_000)
         }
@@ -271,9 +270,12 @@ class BridgeService : Service() {
         } finally { pool.shutdownNow() }
         if (reply == null && quiet) return false
         val s = Settings(this)
-        val (fix, message) = Wireless.checkSetup(reply, s.wifi())
+        val saved = s.wifi()
+        val (fix, message) = Wireless.checkSetup(reply, saved)
         fix?.let { s.ssid = it.ssid; s.password = it.password; s.bssid = it.bssid }
-        if (!quiet || message != lastCheck) say(message)  // a new truck asks every 10 s; don't repeat the same line
+        // TEST always reports. On its own, a working truck only speaks when it fixed something, and a new truck
+        // (asking every 10 s) doesn't repeat itself.
+        if (!quiet || fix != null || (saved == null && message != lastCheck)) say(message)
         lastCheck = message
         return reply != null
     }

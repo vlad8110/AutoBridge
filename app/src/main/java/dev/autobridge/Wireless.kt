@@ -120,7 +120,7 @@ object Wireless {
                     val status = firstVarint(payload)
                     log("Phone Wi-Fi status: $status (0 = connected)")
                     if (status == 0L) onPhoneOnWifi()
-                    else log("The phone couldn't join ${wifi().ssid}. Check the hotspot password, then tap TEST in AutoBridge settings")
+                    else log("The phone couldn't join ${wifi().ssid}: out of range, or a wrong hotspot password (TEST in settings checks it)")
                 }
                 else -> log("Phone message $id (${payload.size} bytes)")
             }
