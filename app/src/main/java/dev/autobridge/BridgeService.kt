@@ -209,7 +209,7 @@ class BridgeService : Service() {
                                 val first = wifi
                                 Wireless.handshake(it.inputStream, it.outputStream, "127.0.0.1", { prefs.wifi() ?: first }, Wireless.PHONE_AA_PORT,
                                     onPhoneOnWifi = { thread(name = "ab-find") { connectToPhone(ip) } }, log = ::say,
-                                    onLink = { send -> busyAt = System.currentTimeMillis(); invite = send })
+                                    onLink = { send -> busyAt = System.currentTimeMillis(); invite = send }, busy = { handle != 0L })
                             } catch (_: IOException) {
                                 Log.i(TAG, "Bluetooth link to the phone closed")
                             } finally {
@@ -235,17 +235,22 @@ class BridgeService : Service() {
     /** One pass over every address in the car's /24: the first that accepts on [port], or null. */
     private fun sweep(pool: java.util.concurrent.ExecutorService, carIp: String, port: Int): Socket? {
         val prefix = carIp.substringBeforeLast('.')
+        val opened = java.util.concurrent.ConcurrentLinkedQueue<Socket>()
         val tasks = (1..254).map { "$prefix.$it" }.filter { it != carIp }.map { host ->
             java.util.concurrent.Callable {
                 Socket().also { s ->
                     try {
                         s.bind(InetSocketAddress(carIp, 0))  // leave through the hotspot interface
                         s.connect(InetSocketAddress(host, port), 700)
+                        opened += s
                     } catch (e: IOException) { s.close(); throw e }
                 }
             }
         }
-        return try { pool.invokeAny(tasks) } catch (_: java.util.concurrent.ExecutionException) { null }
+        val winner = try { pool.invokeAny(tasks) } catch (_: java.util.concurrent.ExecutionException) { null }
+        // A connect ignores cancellation, so others may also have connected: close them, or each sweep leaks one.
+        thread(isDaemon = true) { Thread.sleep(750); opened.filter { it !== winner }.forEach { runCatching { it.close() } } }
+        return winner
     }
 
     /**
@@ -290,7 +295,9 @@ class BridgeService : Service() {
         // Only TEST or a brand-new truck may change saved details: on its own, a check could be answered by any
         // device on the hotspot pretending to be the phone.
         val fix = found?.takeIf { !quiet || saved == null }
-        val message = if (found != null && fix == null) "Wi-Fi check: your phone reports different hotspot details; tap TEST in settings to update them" else checked
+        val message = if (found != null && fix == null && saved != null)
+            "Wi-Fi check: the hotspot ${Wireless.differences(found, saved).joinToString(" and ")} on your phone differs from the truck's; tap TEST in settings to use the phone's"
+        else checked
         fix?.let { s.ssid = it.ssid; s.password = it.password; s.bssid = it.bssid }
         // TEST always reports. On its own, a working truck only speaks when it fixed something, and a new truck
         // (asking every 10 s) doesn't repeat itself.
@@ -376,7 +383,8 @@ class BridgeService : Service() {
         video = v
         decoder = VideoDecoder(plan.mime, v.codecW, v.codecH) {
             // Re-sending video focus makes the phone send a fresh key frame.
-            handle.takeIf { it != 0L }?.let { h -> Native.videoFocus(h, true) }
+            // On main, like every other caller: endSession there frees the session, so the handle can't go stale mid-call.
+            main.post { handle.takeIf { it != 0L }?.let { h -> Native.videoFocus(h, true) } }
         }.also { d -> surface?.let { d.attach(it) } }
         audio.holdFocus()
         NowPlaying.connected(this)
@@ -502,7 +510,8 @@ class BridgeService : Service() {
         }
         override fun onAudio(stream: Int, pcm: ByteArray) = audio.write(stream, pcm)
         override fun onAudioState(stream: Int, playing: Boolean) = audio.state(stream, playing)
-        override fun onMic(open: Boolean) = mic.open(open)
+        // On main and for this session only: a late "open" while the session stops would leave the mic recording.
+        override fun onMic(open: Boolean) { main.post { if (id == sessionId && handle != 0L) mic.open(open) } }
         override fun onVideoFocus(projected: Boolean) {
             if (!projected) main.post {  // "Exit" in Android Auto: show the car's home screen
                 startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -554,7 +563,7 @@ class BridgeService : Service() {
                 if (v.status != CarPropertyValue.STATUS_AVAILABLE) return
                 val x = v.value
                 truck = when (v.propertyId) {
-                    VehiclePropertyIds.PERF_VEHICLE_SPEED -> truck.copy(speedMs = x as? Float)
+                    VehiclePropertyIds.PERF_VEHICLE_SPEED -> truck.copy(speedMs = (x as? Float)?.let(Math::abs))  // negative in reverse
                     VehiclePropertyIds.GEAR_SELECTION -> truck.copy(gear = x as? Int)
                     VehiclePropertyIds.PARKING_BRAKE_ON -> truck.copy(parkingBrake = x as? Boolean)
                     VehiclePropertyIds.EV_BATTERY_LEVEL -> truck.copy(batteryWh = x as? Float)
@@ -568,7 +577,6 @@ class BridgeService : Service() {
                     VehiclePropertyIds.EV_CHARGE_PORT_OPEN -> truck.copy(portOpen = x as? Boolean)
                     VehiclePropertyIds.EV_CHARGE_PORT_CONNECTED -> truck.copy(portConnected = x as? Boolean)
                     VehiclePropertyIds.EV_REGENERATIVE_BRAKING_STATE -> truck.copy(regen = x as? Int)
-                    VehiclePropertyIds.ENV_OUTSIDE_TEMPERATURE -> truck.copy(outsideC = x as? Float)
                     else -> truck
                 }
                 if (v.propertyId in AA_PROPS) pushSensors()
@@ -579,13 +587,11 @@ class BridgeService : Service() {
             }
             override fun onErrorEvent(propertyId: Int, zone: Int) {}
         }
-        // The truck's own units (miles, °F); read once, they only change in the truck's settings.
+        // The truck's own distance unit; read once, it only changes in the truck's settings.
         runCatching { truck = truck.copy(miles = props.getProperty<Int>(VehiclePropertyIds.DISTANCE_DISPLAY_UNITS, 0).value == 0x24) }
-        runCatching { truck = truck.copy(fahrenheit = props.getProperty<Int>(VehiclePropertyIds.HVAC_TEMPERATURE_DISPLAY_UNITS, 0).value == 0x31) }
         for (id in AA_PROPS + listOf(VehiclePropertyIds.EV_BATTERY_INSTANTANEOUS_CHARGE_RATE, VehiclePropertyIds.EV_CHARGE_STATE,
             VehiclePropertyIds.EV_CHARGE_TIME_REMAINING, VehiclePropertyIds.EV_CHARGE_PERCENT_LIMIT, VehiclePropertyIds.EV_CHARGE_CURRENT_DRAW_LIMIT,
-            VehiclePropertyIds.EV_CHARGE_PORT_OPEN, VehiclePropertyIds.EV_CHARGE_PORT_CONNECTED, VehiclePropertyIds.EV_REGENERATIVE_BRAKING_STATE,
-            VehiclePropertyIds.ENV_OUTSIDE_TEMPERATURE)) {
+            VehiclePropertyIds.EV_CHARGE_PORT_OPEN, VehiclePropertyIds.EV_CHARGE_PORT_CONNECTED, VehiclePropertyIds.EV_REGENERATIVE_BRAKING_STATE)) {
             val rate = if (id == VehiclePropertyIds.PERF_VEHICLE_SPEED || id == VehiclePropertyIds.EV_BATTERY_INSTANTANEOUS_CHARGE_RATE) 1f
                        else CarPropertyManager.SENSOR_RATE_ONCHANGE
             runCatching { props.registerCallback(callback, id, rate) }.onFailure { Log.w(TAG, "truck won't share property $id: $it") }

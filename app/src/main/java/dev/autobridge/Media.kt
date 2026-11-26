@@ -61,10 +61,11 @@ class VideoDecoder(private val mime: String, private val width: Int, private val
 
     /** Called on the connection thread; only hands the frame over. */
     fun frame(data: ByteArray, timestampUs: Long) = handler.post {
-        val isConfig = isConfig(data, hevc)
+        val types = nalTypes(data, hevc)  // one scan per frame, up to 60 a second
+        val isConfig = isConfig(types, hevc)
         if (isConfig) config = data
         if (codec == null) return@post
-        val key = hasKeyFrame(data, hevc)
+        val key = hasKeyFrame(types, hevc)
         if (waitForKeyFrame) {
             if (!isConfig && !key) return@post  // a P-frame without its reference would smear
             if (key) waitForKeyFrame = false
@@ -119,9 +120,9 @@ class VideoDecoder(private val mime: String, private val width: Int, private val
         }
 
         /** Starts with the stream's setup: SPS in H.264, VPS in H.265. */
-        fun isConfig(d: ByteArray, hevc: Boolean = false) = nalTypes(d, hevc).firstOrNull() == (if (hevc) 32 else 7)
+        fun isConfig(types: List<Int>, hevc: Boolean = false) = types.firstOrNull() == (if (hevc) 32 else 7)
         /** Contains a frame that needs no earlier one: IDR in H.264, any IRAP (16-21) in H.265. */
-        fun hasKeyFrame(d: ByteArray, hevc: Boolean = false) = nalTypes(d, hevc).any { if (hevc) it in 16..21 else it == 5 }
+        fun hasKeyFrame(types: List<Int>, hevc: Boolean = false) = types.any { if (hevc) it in 16..21 else it == 5 }
     }
 }
 

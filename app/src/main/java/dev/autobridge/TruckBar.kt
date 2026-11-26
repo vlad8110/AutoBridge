@@ -23,7 +23,7 @@ object BarText {
     enum class Tone { NORMAL, GOOD, BAD }
     enum class Port { HIDDEN, CLOSED, PLUGGED, OPEN }
     data class Bar(
-        val gear: String, val gearWord: String, val gearActive: Boolean,
+        val gear: String, val gearWord: String,
         val range: String, val rangeUnit: String, val energy: String,
         val mid: String, val midUnit: String, val midLabel: String,          // speed
         val timeLeft: String, val timeLabel: String,                         // while charging: "1 h 45 min", "to 80%"
@@ -32,7 +32,7 @@ object BarText {
         val meterFrom: Float, val meterTo: Float, val meterMark: Float,      // 0..1 across the meter
         val meterTone: Tone, val power: String, val powerTone: Tone, val caption: String,
         val brakeOn: Boolean, val port: Port,
-        val percent: String, val fill: Float, val batteryLabel: String,
+        val percent: String,
     )
 
     private const val NONE = "—"
@@ -47,7 +47,6 @@ object BarText {
         val common = Bar(
             gear = gear,
             gearWord = when (gear) { "P" -> "Park"; "R" -> "Reverse"; "N" -> "Neutral"; "D" -> "Drive"; NONE -> ""; else -> "Gear $gear" },
-            gearActive = gear != "P" && gear != NONE,
             range = t.rangeM?.let { "${(if (miles) it / 1609.344f else it / 1000).roundToInt()}" } ?: NONE,
             rangeUnit = if (miles) "mi" else "km",
             energy = t.batteryWh?.let { "${(it / 1000).roundToInt()}" + (t.capacityWh?.let { c -> " / ${(c / 1000).roundToInt()}" } ?: "") + " kWh" } ?: "",
@@ -60,7 +59,7 @@ object BarText {
                 t.portConnected == true -> Port.PLUGGED; t.portOpen == true -> Port.OPEN
                 t.portOpen == false || t.portConnected == false -> Port.CLOSED; else -> Port.HIDDEN
             },
-            percent = pct?.toString() ?: NONE, fill = (pct ?: 0) / 100f, batteryLabel = if (t.charging) "Charging" else "Battery",
+            percent = pct?.toString() ?: NONE,
         )
         return if (t.charging) common.copy(
             timeLeft = t.chargeSec?.let(::duration) ?: "",
@@ -286,6 +285,8 @@ class TruckBar(context: Context) : FrameLayout(context) {
 
     /** The Sierra EV charge door, drawn from the real one: shut, open with the socket, plugged in, or charging. */
     private class PortIcon(c: Context) : Icon(c) {
+        private var glow: android.graphics.Shader? = null
+        private var glowColor = 0
         private var state = -1
         fun set(s: Int) {
             if (s == state) return
@@ -302,9 +303,14 @@ class TruckBar(context: Context) : FrameLayout(context) {
                     a = 0.11f + 0.11f * kotlin.math.sin(android.os.SystemClock.uptimeMillis() / 1800f * 2 * Math.PI.toFloat())
                     postInvalidateDelayed(60)
                 }
-                fill(BLACK)  // opaque: a paint's alpha also fades its gradient
-                p.shader = android.graphics.RadialGradient(176f, 132f, 112f, (color and 0xFFFFFF) or ((a * 255).toInt() shl 24), color and 0xFFFFFF, android.graphics.Shader.TileMode.CLAMP)
-                c.drawCircle(176f, 132f, 112f, p); p.shader = null
+                // Built once per colour, faded with the paint's alpha (it scales the whole gradient): this redraws
+                // ~16 times a second for hours while charging, so no new gradient per frame.
+                if (glow == null || glowColor != color) {
+                    glow = android.graphics.RadialGradient(176f, 132f, 112f, color or 0xFF000000.toInt(), color and 0xFFFFFF, android.graphics.Shader.TileMode.CLAMP)
+                    glowColor = color
+                }
+                fill(BLACK); p.shader = glow; p.alpha = (a * 255).toInt()
+                c.drawCircle(176f, 132f, 112f, p); p.shader = null; p.alpha = 255
             }
             rr(c, 66f, 40f, 286f, 224f, 40f, fill(0xFF0A0A0A.toInt())); rr(c, 66f, 40f, 286f, 224f, 40f, line(OUTLINE, 4f))
             if (shut) {

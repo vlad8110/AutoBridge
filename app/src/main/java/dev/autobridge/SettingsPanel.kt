@@ -106,7 +106,11 @@ class SettingsPanel(
         addView(eqPanel, LayoutParams(-1, -1))  // on top of the settings page when open
     }
 
-    fun open() { refresh(); visibility = VISIBLE; showTruck(BridgeService.latestTruck) }
+    fun open() { shapeAtOpen = shape(); refresh(); visibility = VISIBLE; showTruck(BridgeService.latestTruck) }
+
+    /** The settings that change Android Auto's shape; a tile tapped on and back off changes nothing. */
+    private fun shape() = listOf(s.barEnabled, s.statusBarShown, s.hevcEnabled)
+    private var shapeAtOpen = emptyList<Boolean>()
 
     /** Live truck data while the page is open. */
     fun showTruck(t: Truck) {
@@ -119,7 +123,8 @@ class SettingsPanel(
     /** True if the page was open (so Back closes it instead of leaving AutoBridge). */
     fun close(): Boolean = eqPanel.close() || (visibility == VISIBLE).also {
         visibility = GONE
-        if (shapeChanged) { shapeChanged = false; onShapeChanged() }
+        if (shapeChanged && shape() != shapeAtOpen) onShapeChanged()
+        shapeChanged = false
     }
 
     private fun refresh() {

@@ -3,6 +3,18 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test; the phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page.
 
+## 0.7.1
+- Fixed: when Bluetooth reconnected during a session, the truck asked the phone to rejoin Wi-Fi, which could knock a working Android Auto off. It now leaves a running session alone.
+- A failed Wi-Fi join now says the hotspot password is probably wrong (the phone is near the truck if Bluetooth works), and the Wi-Fi check names which part differs.
+- The microphone can no longer get stuck on after a session ends.
+- Fixed a rare crash when the video catches up just as the phone disconnects.
+- Reverse speed shows without a minus sign.
+- Turning a setting on and back off no longer restarts Android Auto.
+- The truck log keeps recording if its log reader restarts.
+- Fewer leaked connections when searching for the phone; the phone relay no longer piles up retries.
+- Less work while charging (charge-port glow) and while Android Auto is on screen (hidden console cursor, one scan per video frame).
+- Removed unused code (outside temperature, unused bar fields).
+
 ## 0.7.0
 Security and reliability fixes from a full code audit.
 - Phone app: only hands a truck the hotspot details when it's on that truck's network (same router and frequency), so another device on home or café Wi-Fi can't ask for the password.

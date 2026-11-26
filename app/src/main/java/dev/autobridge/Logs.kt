@@ -36,17 +36,26 @@ object Logs {
         val d = File(context.filesDir, "logs").apply { mkdirs() }
         dir = d
         thread(name = "ab-logcat", isDaemon = true) {
-            runCatching {
-                var out = FileWriter(File(d, CURRENT), true)
-                val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
-                out.write("==== AutoBridge $version started ${Date()} (process ${Process.myPid()}) ====\n"); out.flush()
-                val p = Runtime.getRuntime().exec(arrayOf("logcat", "-v", "time", "--pid=${Process.myPid()}"))
-                p.inputStream.bufferedReader().forEachLine { l ->
-                    out.write(l); out.write("\n"); out.flush()  // flushed per line: nothing is lost if we die
-                    if (rotate(d)) { out.close(); out = FileWriter(File(d, CURRENT), true) }
+            val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
+            var first = true
+            // logcat can exit (its log service restarted, or it was killed): start it again, or the log stops for good.
+            while (true) {
+                runCatching {
+                    var out = FileWriter(File(d, CURRENT), true)
+                    out.write(if (first) "==== AutoBridge $version started ${Date()} (process ${Process.myPid()}) ====\n"
+                              else "==== log capture restarted ${Date()} ====\n"); out.flush()
+                    // After a restart, only new lines: the buffer's older ones are already in the file.
+                    val since = if (first) emptyArray() else arrayOf("-T", "1")
+                    first = false
+                    val p = Runtime.getRuntime().exec(arrayOf("logcat", "-v", "time", "--pid=${Process.myPid()}", *since))
+                    p.inputStream.bufferedReader().forEachLine { l ->
+                        out.write(l); out.write("\n"); out.flush()  // flushed per line: nothing is lost if we die
+                        if (rotate(d)) { out.close(); out = FileWriter(File(d, CURRENT), true) }
+                    }
+                    out.close()
                 }
+                Thread.sleep(2000)
             }
-            capturing = false
         }
     }
 

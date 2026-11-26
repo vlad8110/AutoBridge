@@ -53,14 +53,17 @@ object Wireless {
         if (l[0] == "AUTOBRIDGE-WIFI-ERROR") return null to "Wi-Fi check: ${l.getOrNull(1) ?: "the phone app couldn't read the hotspot"}"
         val w = parseSetup(reply) ?: return null to "Wi-Fi check: the phone app has no hotspot password saved. Tap Password in AutoBridge Phone."
         if (saved == null) return w to "Got the hotspot details from your phone: ${w.ssid}"
-        val wrong = listOfNotNull(
-            "name".takeIf { w.ssid != saved.ssid },
-            "BSSID".takeIf { !w.bssid.equals(saved.bssid, ignoreCase = true) },
-            "password".takeIf { w.password != saved.password },
-        )
+        val wrong = differences(w, saved)
         if (wrong.isEmpty()) return null to "Wi-Fi check: ${w.ssid} matches your phone"
         return w to "Wi-Fi check: fixed the hotspot ${wrong.joinToString(" and ")} to match your phone (${w.ssid})"
     }
+
+    /** Which parts of two hotspot details differ: "name", "BSSID", "password". */
+    fun differences(a: Wifi, b: Wifi) = listOfNotNull(
+        "name".takeIf { a.ssid != b.ssid },
+        "BSSID".takeIf { !a.bssid.equals(b.bssid, ignoreCase = true) },
+        "password".takeIf { a.password != b.password },
+    )
 
     const val START_REQUEST = 1
     const val INFO_REQUEST = 2
@@ -91,7 +94,7 @@ object Wireless {
      */
     fun handshake(
         input: InputStream, output: OutputStream, ip: String, wifi: () -> Wifi, port: Int = PORT,
-        onPhoneOnWifi: () -> Unit = {}, onLink: (invite: () -> Unit) -> Unit = {},
+        onPhoneOnWifi: () -> Unit = {}, onLink: (invite: () -> Unit) -> Unit = {}, busy: () -> Boolean = { false },
         log: (String) -> Unit,
     ) {
         val src = DataInputStream(input)
@@ -108,7 +111,8 @@ object Wireless {
             when (id) {
                 VERSION_RESPONSE -> {
                     log("Phone version reply (${payload.size} bytes)")
-                    invite()
+                    // Android Auto already running over Wi-Fi: asking the phone to (re)join would knock it off.
+                    if (busy()) log("Android Auto is already running; not asking the phone to rejoin Wi-Fi") else invite()
                 }
                 INFO_REQUEST -> {
                     val w = wifi()
@@ -120,7 +124,8 @@ object Wireless {
                     val status = firstVarint(payload)
                     log("Phone Wi-Fi status: $status (0 = connected)")
                     if (status == 0L) onPhoneOnWifi()
-                    else log("The phone couldn't join ${wifi().ssid}: out of range, or a wrong hotspot password (TEST in settings checks it)")
+                    // Bluetooth is up, so the phone is near the truck: a failed join is almost always the password.
+                    else log("The phone couldn't join ${wifi().ssid}. The hotspot password is probably wrong: check it in AutoBridge Phone (Password) and on the truck (EDIT)")
                 }
                 else -> log("Phone message $id (${payload.size} bytes)")
             }

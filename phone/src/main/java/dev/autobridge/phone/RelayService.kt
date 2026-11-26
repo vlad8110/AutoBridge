@@ -89,6 +89,7 @@ class RelayService : Service() {
             try {
                 ServerSocket().use { server ->
                     synchronized(servers) { servers += server }
+                    try {
                     server.reuseAddress = true
                     server.bind(address)
                     while (running) {
@@ -96,6 +97,7 @@ class RelayService : Service() {
                         say("$who connected")
                         onSocket(s)
                     }
+                    } finally { synchronized(servers) { servers -= server } }  // a failed bind retries every 2 s
                 }
             } catch (e: IOException) {
                 if (running) { say("Relay error ($who): ${e.message}"); Thread.sleep(2000) }

@@ -42,7 +42,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private var statusText = ""
     private var cursorOn = true
     private val blink = object : Runnable {
-        override fun run() { cursorOn = !cursorOn; status.text = Console.render(statusText, cursorOn); status.postDelayed(this, 500) }
+        override fun run() {
+            if (panel.visibility == View.VISIBLE) { cursorOn = !cursorOn; status.text = Console.render(statusText, cursorOn) }  // hidden under the video: skip
+            status.postDelayed(this, 500)
+        }
     }
 
     private fun show(text: String) { statusText = text; status.text = Console.render(text, cursorOn) }

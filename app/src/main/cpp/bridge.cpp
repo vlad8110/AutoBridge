@@ -180,7 +180,6 @@ public:
     std::atomic<int64_t> lastPingMs{0};  // phone's last ping; 0 = none yet (Kotlin watches for it stopping)
     std::thread thread;
     std::vector<std::shared_ptr<void>> keep;  // handlers, kept alive for the session
-    std::function<void()> starter;
 
     // Set by handlers so JNI calls can reach the right channel.
     std::shared_ptr<aasdk::channel::inputsource::InputSourceService> inputChannel;
