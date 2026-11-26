@@ -418,7 +418,8 @@ class BridgeService : Service() {
         handle = Native.start(fd, plan.toArray(), truck.toArray(), gpsAllowed(), Callbacks(++sessionId, plan))
         main.removeCallbacks(watchdog); main.postDelayed(watchdog, 2000)
         watchGps()
-        Log.i(TAG, "video offered: ${if (plan.hevc) "H.265" else "H.264"} " + plan.configs.joinToString { "${it.codecW}x${it.codecH}" })
+        Log.i(TAG, "video offered: ${if (plan.hevc) "H.265" else "H.264"} " + plan.configs.joinToString { "${it.codecW}x${it.codecH}" } +
+            " for an area of ${prefs.viewW}x${prefs.viewH} (truck bar ${if (prefs.barEnabled) "on" else "off"}, status bar ${if (prefs.statusBarShown) "on" else "off"})")
         pushSensors()
         say("Android Auto connected")
         // Started at boot, nobody has opened the screen yet: try to bring it up for the video.
@@ -663,8 +664,13 @@ class Settings(private val context: Context) {
     var ssid: String get() = p.getString("ssid", "")!!; set(v) = p.edit().putString("ssid", v.trim()).apply()
     var password: String get() = p.getString("password", "")!!; set(v) = p.edit().putString("password", v).apply()
     var bssid: String get() = p.getString("bssid", "")!!; set(v) = p.edit().putString("bssid", v.trim()).apply()
-    var viewW: Int get() = p.getInt("viewW", 0); set(v) = p.edit().putInt("viewW", v).apply()
-    var viewH: Int get() = p.getInt("viewH", 0); set(v) = p.edit().putInt("viewH", v).apply()
+    // Android Auto's area, remembered for each truck bar / status bar combination: the same settings always give
+    // Android Auto the same size, so it picks the same layout. (2012x1680 is a hair under the line between map-on-top
+    // and map-beside; one in-between measurement used to flip it until the next reconnect.) The old shared value is
+    // only a first-time fallback.
+    private val shape get() = "${if (barEnabled) "bar" else ""}${if (statusBarShown) "status" else ""}"
+    var viewW: Int get() = p.getInt("viewW.$shape", p.getInt("viewW", 0)); set(v) = p.edit().putInt("viewW.$shape", v).apply()
+    var viewH: Int get() = p.getInt("viewH.$shape", p.getInt("viewH", 0)); set(v) = p.edit().putInt("viewH.$shape", v).apply()
     /** H.265 failed to start in this app version; each update tries it again. */
     var hevcFailed: Boolean
         get() = p.getLong("hevcFailedIn", -1) == version

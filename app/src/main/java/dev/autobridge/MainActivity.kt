@@ -77,7 +77,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             addView(surface, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             addView(panel, FrameLayout.LayoutParams(-1, -1))
             addOnLayoutChangeListener { _, l, t, r, b, _, _, _, _ ->
-                Settings(context).apply { viewW = r - l; viewH = b - t }  // used for the next session
+                if (settled()) Settings(context).apply { viewW = r - l; viewH = b - t }  // used for the next session
                 fitSurface()
             }
         }
@@ -114,9 +114,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         fitSurface()  // a session may have started while this screen was paused (its callbacks were off)
         status.postDelayed(blink, 500)
         settingsPanel.shown(true)
+        resumed = true
+        root.requestLayout()  // measure again now that the bars are as set
     }
 
     override fun onPause() {
+        resumed = false
         settingsPanel.shown(false)
         status.removeCallbacks(blink)
         BridgeService.onStatus = null
@@ -126,6 +129,20 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         ClusterNav.paused(this)
         BridgeService.onVideoActive = null
         super.onPause()
+    }
+
+    private var resumed = false
+
+    /**
+     * True when the screen is laid out the way the settings say: on screen, full window, status bar and truck bar as
+     * set. Only then is root's size Android Auto's real area; in between (opening, the bar being hidden, a swipe
+     * showing the status bar) it is a passing size that would give the phone the wrong layout.
+     */
+    private fun settled(): Boolean {
+        if (!resumed || isInMultiWindowMode) return false
+        val s = Settings(this)
+        val statusShown = root.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.statusBars()) ?: return false
+        return statusShown == s.statusBarShown && (truckBar.visibility == View.VISIBLE) == s.barEnabled
     }
 
     /** Shows or hides the truck's status bar per the setting (a swipe from the top still shows it for a moment). */
