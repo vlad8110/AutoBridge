@@ -113,9 +113,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         applyStatusBar()
         fitSurface()  // a session may have started while this screen was paused (its callbacks were off)
         status.postDelayed(blink, 500)
+        settingsPanel.shown(true)
     }
 
     override fun onPause() {
+        settingsPanel.shown(false)
         status.removeCallbacks(blink)
         BridgeService.onStatus = null
         BridgeService.onTruck = null
@@ -178,7 +180,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
                 c.drawBitmap(it, (at[0] - origin[0]).toFloat(), (at[1] - origin[1]).toFloat(), under)
             }
             c.drawColor(Color.BLACK, android.graphics.PorterDuff.Mode.DST_OVER)
-            done(ByteArrayOutputStream().also { shot.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray())
+            // A full-screen PNG takes a few hundred ms: not on the UI thread, where touches would stall.
+            kotlin.concurrent.thread(name = "ab-shot-png") { done(ByteArrayOutputStream().also { shot.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()) }
         }
         if (BridgeService.instance?.video == null || !surface.holder.surface.isValid || surface.width == 0) return finish(null)
         val video = Bitmap.createBitmap(surface.width, surface.height, Bitmap.Config.ARGB_8888)
@@ -336,6 +339,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             if (Build.VERSION.SDK_INT >= 31) add(Manifest.permission.BLUETOOTH_CONNECT)
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
         }.filter { checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED }
+            // One this car's Android doesn't have can never be granted: asking would open the dialog at every start.
+            .filter { runCatching { packageManager.getPermissionInfo(it, 0) }.isSuccess }
         if (wanted.isEmpty()) startService() else requestPermissions(wanted.toTypedArray(), 1)
     }
 

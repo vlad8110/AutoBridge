@@ -141,6 +141,9 @@ class SettingsPanel(
     }
 
     /** True if the page was open (so Back closes it instead of leaving AutoBridge). */
+    /** See [EqPanel.shown]. */
+    fun shown(visible: Boolean) = eqPanel.shown(visible && visibility == VISIBLE)
+
     fun close(): Boolean = eqPanel.close() || (visibility == VISIBLE).also {
         visibility = GONE
         if (shapeChanged && shape() != shapeAtOpen) onShapeChanged()

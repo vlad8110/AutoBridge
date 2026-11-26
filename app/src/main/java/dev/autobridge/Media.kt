@@ -33,28 +33,50 @@ class VideoDecoder(private val mime: String, private val width: Int, private val
     private val frames = ArrayDeque<Frame>()
     private val freeInputs = ArrayDeque<Int>()
     private var waitForKeyFrame = true
+    private var surface: Surface? = null  // the last one attached, to restart on after a decoder error
+    /** A decoder ran on a screen, and whether it ever put a picture out: tells a failed H.265 from a hidden screen. */
+    @Volatile var shown = false
+        private set
+    @Volatile var decoded = false
+        private set
 
-    fun attach(surface: Surface) = handler.post {
+    fun attach(surface: Surface) = handler.post { start(surface) }
+
+    private fun start(surface: Surface) {
         closeCodec()
-        codec = MediaCodec.createDecoderByType(mime).apply {
-            setCallback(object : MediaCodec.Callback() {
-                override fun onInputBufferAvailable(c: MediaCodec, index: Int) { if (c === codec) { freeInputs.addLast(index); feed() } }
-                override fun onOutputBufferAvailable(c: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
-                    if (c === codec) runCatching { c.releaseOutputBuffer(index, true) }
-                }
-                override fun onError(c: MediaCodec, e: MediaCodec.CodecException) { Log.w(TAG, "decoder error", e) }
-                override fun onOutputFormatChanged(c: MediaCodec, format: MediaFormat) {}
-            }, handler)
-            val format = MediaFormat.createVideoFormat(mime, width, height)
-            format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
-            configure(format, surface, null, 0)
-            start()
+        this.surface = surface
+        try {
+            codec = MediaCodec.createDecoderByType(mime).apply {
+                setCallback(object : MediaCodec.Callback() {
+                    override fun onInputBufferAvailable(c: MediaCodec, index: Int) { if (c === codec) { freeInputs.addLast(index); feed() } }
+                    override fun onOutputBufferAvailable(c: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
+                        if (c === codec) { decoded = true; runCatching { c.releaseOutputBuffer(index, true) } }
+                    }
+                    override fun onError(c: MediaCodec, e: MediaCodec.CodecException) {
+                        Log.w(TAG, "decoder error", e)
+                        // A dead decoder would freeze the picture while sound and pings carry on: start a new one.
+                        if (c === codec && !e.isTransient && !e.isRecoverable) this@VideoDecoder.surface?.let { start(it); onNeedKeyFrame() }
+                    }
+                    override fun onOutputFormatChanged(c: MediaCodec, format: MediaFormat) {}
+                }, handler)
+                val format = MediaFormat.createVideoFormat(mime, width, height)
+                format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1)
+                configure(format, surface, null, 0)
+                start()
+            }
+            shown = true
+        } catch (e: Exception) {
+            // The screen went away while the decoder was being made (the surface is already released): wait for the next one.
+            Log.w(TAG, "decoder start failed", e)
+            codec?.runCatching { release() }
+            codec = null
+            return
         }
         waitForKeyFrame = true
         config?.let { frames.addLast(Frame(it, 0, true)) }
     }
 
-    fun detach() = handler.post { closeCodec() }
+    fun detach() = handler.post { closeCodec(); surface = null }
 
     /** Ends the decoder and its thread; the instance can't be used afterwards. */
     fun release() = handler.post { closeCodec(); thread.quitSafely() }
@@ -88,7 +110,7 @@ class VideoDecoder(private val mime: String, private val width: Int, private val
             try {
                 c.getInputBuffer(i)!!.apply { clear(); put(f.data) }
                 c.queueInputBuffer(i, 0, f.data.size, f.timestampUs, if (f.config) MediaCodec.BUFFER_FLAG_CODEC_CONFIG else 0)
-            } catch (e: IllegalStateException) {
+            } catch (e: RuntimeException) {  // also a key frame bigger than the input buffer
                 Log.w(TAG, "decoder input error", e)
                 return
             }
@@ -173,6 +195,7 @@ class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> U
                 .setAudioFormat(AudioFormat.Builder().setSampleRate(s.rate).setChannelMask(mask).setEncoding(AudioFormat.ENCODING_PCM_16BIT).build())
                 .setBufferSizeInBytes(maxOf(min * 2, if (s.music) second else quarterSecond)).build().apply { play() }
             writer = Thread({
+                android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_AUDIO)  // busy UI or video can't delay a write
                 var playing = true
                 var filling = reserve > 0
                 var underruns = 0
@@ -209,7 +232,7 @@ class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> U
                         }
                     }
                 } catch (_: InterruptedException) {}
-            }, "ab-audio").apply { priority = Thread.MAX_PRIORITY; start() }
+            }, "ab-audio").apply { start() }
         }
 
         /** The phone started or stopped this stream. */
@@ -268,11 +291,11 @@ class Mic(private val send: (ByteArray, Int) -> Unit) {
     @SuppressLint("MissingPermission")  // RECORD_AUDIO is requested by MainActivity
     fun open(on: Boolean) {
         if (!on) { thread?.run { interrupt(); join(500) }; thread = null; return }
-        if (thread != null) return
+        if (thread?.isAlive == true) return  // a mic that failed to start may be opened again
         thread = Thread {
             val rec = runCatching {
                 AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, 16000, AudioFormat.CHANNEL_IN_MONO,
-                    AudioFormat.ENCODING_PCM_16BIT, 16000).also { it.startRecording() }
+                    AudioFormat.ENCODING_PCM_16BIT, 16000).also { r -> runCatching { r.startRecording() }.onFailure { r.release(); throw it } }
             }.getOrElse { Log.w(TAG, "mic unavailable", it); return@Thread }
             val buf = ByteArray(640)
             while (!Thread.currentThread().isInterrupted) {

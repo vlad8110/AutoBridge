@@ -66,7 +66,11 @@ object NowPlaying {
         if (durationSec >= 0) meta.putLong(MediaMetadata.METADATA_KEY_DURATION, durationSec * 1000L)
         art?.let { bytes ->
             // Small art: full-size covers made GM's cluster show the title without a picture (OCBM).
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { b ->
+            // Decoded at reduced size: this runs on the session thread, and a full-size cover stalled sound and picture.
+            val size = BitmapFactory.Options().apply { inJustDecodeBounds = true }.also { BitmapFactory.decodeByteArray(bytes, 0, bytes.size, it) }
+            var sample = 1
+            while (minOf(size.outWidth, size.outHeight) / (sample * 2) >= 512) sample *= 2
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })?.let { b ->
                 val small = scaled(b, 512)
                 meta.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, small).putBitmap(MediaMetadata.METADATA_KEY_ART, small)
             }

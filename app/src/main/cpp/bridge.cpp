@@ -3,6 +3,7 @@
 #include <jni.h>
 #include <android/log.h>
 #include <thread>
+#include <future>
 #include <atomic>
 #include <array>
 #include <climits>
@@ -720,16 +721,19 @@ static Session *start(JNIEnv *env, int fd, const Config &cfg, const jint *truck,
 
 static void stop(Session *s) {
     s->ended = true;  // no onEnded after an explicit stop
-    s->strand.dispatch([s] {
+    // Called on the UI thread: wait only as long as the shutdown takes (at most 200 ms), not a fixed 200 ms.
+    auto done = std::make_shared<std::promise<void>>();
+    auto finished = done->get_future();
+    s->strand.dispatch([s, done] {
         try {
             s->messenger->stop();
             s->transport->stop();
             s->cryptor->deinit();
         } catch (...) {}
         s->work.reset();
+        done->set_value();
     });
-    // Give aasdk a moment to flush, then force the loop down.
-    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    finished.wait_for(std::chrono::milliseconds(200));
     s->io.stop();
     if (s->thread.joinable()) s->thread.join();
     s->keep.clear();

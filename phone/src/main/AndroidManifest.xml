@@ -12,6 +12,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <application
+        android:allowBackup="false"
         android:label="AutoBridge Phone"
         android:icon="@drawable/ic_bridge"
         android:theme="@style/AutoBridgePhone">

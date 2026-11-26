@@ -77,6 +77,9 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         addView(page, LayoutParams(-1, -1))
     }
 
+    /** The app left the screen or came back: meter only while the page can be seen (it costs the audio thread). */
+    fun shown(visible: Boolean) { eq.metering = visible && visibility == VISIBLE; if (eq.metering) bands.invalidate() }
+
     fun open() { eq.metering = true; bands.gains = eq.gains.copyOf(); refresh(); visibility = VISIBLE; bands.invalidate() }
 
     /** Called after the page closes, so settings can update its Equalizer light. */
@@ -152,18 +155,19 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
 
         override fun onDraw(c: Canvas) {
             val accent = if (dim) MUTED else WHITE
-            p.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+            p.typeface = face
             // grid: +12, +6, 0, -6, -12 dB
-            for (db in listOf(12f, 6f, 0f, -6f, -12f)) {
+            for ((n, db) in GRID.withIndex()) {
                 p.style = Paint.Style.STROKE; p.strokeWidth = if (db == 0f) 2.5f * k else 1.5f * k
                 p.color = if (db == 0f) 0xFF5F6368.toInt() else 0xFF2A2D31.toInt()
                 c.drawLine(left, y(db), right, y(db), p)
                 p.style = Paint.Style.FILL; p.color = MUTED; p.textSize = 24f * k; p.textAlign = Paint.Align.RIGHT
-                c.drawText(if (db > 0) "+${db.toInt()}" else "${db.toInt()}", left - 24f * k, y(db) + 8f * k, p)
+                c.drawText(GRID_TEXT[n], left - 24f * k, y(db) + 8f * k, p)
             }
             meter(c)
             // curve through the knobs
-            val path = Path().apply {
+            val path = curve.apply {
+                reset()
                 moveTo(left, y(gains.first()))
                 lineTo(x(0), y(gains[0]))
                 for (i in 1 until gains.size) {
@@ -181,7 +185,8 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                 p.style = Paint.Style.FILL; p.textAlign = Paint.Align.CENTER
                 p.color = WHITE; p.textSize = 30f * k
                 val g = gains[i]
-                c.drawText(if (g > 0) "+${fmt(g)}" else fmt(g), x(i), top - 44f * k, p)
+                if (valueOf[i] != g) { valueOf[i] = g; valueText[i] = if (g > 0) "+${fmt(g)}" else fmt(g) }
+                c.drawText(valueText[i], x(i), top - 44f * k, p)
                 p.color = MUTED; p.textSize = 28f * k
                 c.drawText(Equalizer.LABELS[i], x(i), bottom + 64f * k, p)
             }
@@ -191,6 +196,12 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         /** What each column shows; jumps up with the music and falls back slowly, like a stereo's lights. */
         private val shown = FloatArray(Equalizer.BANDS.size)
         private val seg = RectF(); private val halo = RectF()
+        private val tick = Runnable { invalidate() }
+        // Made once, not 30 times a second: the meter redraws the whole view.
+        private val face = Typeface.create("sans-serif", Typeface.NORMAL)
+        private val curve = Path()
+        private val valueText = Array(Equalizer.BANDS.size) { "" }
+        private val valueOf = FloatArray(Equalizer.BANDS.size) { Float.NaN }
 
         /** Each band's track is a column of LED lights: green, then yellow, then red at the top. */
         private fun meter(c: Canvas) {
@@ -213,7 +224,8 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                     p.color = (led and 0xFFFFFF) or (a shl 24); c.drawRoundRect(seg, 3 * k, 3 * k, p)
                 }
             }
-            if (eq.metering) postInvalidateDelayed(33)  // ~30 fps, only while the EQ page is open
+            removeCallbacks(tick)
+            if (eq.metering) postDelayed(tick, 33)  // ~30 fps, only while the EQ page is open; one pending redraw, never a pile-up
         }
 
         private fun fmt(g: Float) = if (g == g.roundToInt().toFloat()) "${g.roundToInt()}" else "%.1f".format(g)
@@ -243,5 +255,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         const val LED_YELLOW = 0xFFFFD21A.toInt()
         const val LED_RED = 0xFFFF2B3C.toInt()
         const val LED_OFF = 0xFF151816.toInt()
+        private val GRID = floatArrayOf(12f, 6f, 0f, -6f, -12f)  // dB lines
+        private val GRID_TEXT = arrayOf("+12", "+6", "0", "-6", "-12")
     }
 }

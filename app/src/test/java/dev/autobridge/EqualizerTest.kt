@@ -31,6 +31,21 @@ class EqualizerTest {
 
     private fun db(after: Double, before: Double) = 20 * kotlin.math.log10(after / before)
 
+    @Test fun aBandSwitchedBackOnStartsSilent() {
+        val eq = Equalizer()
+        val bass = FloatArray(Equalizer.BANDS.size).also { it[1] = 6f }
+        eq.gains = bass; eq.process(sine(70.0, 20000.0))  // loud bass fills the 64 Hz band's filter memory
+        eq.gains = FloatArray(Equalizer.BANDS.size); eq.process(ByteArray(4800 * 4))  // Flat: the band is skipped
+        eq.gains = bass
+        val after = ByteArray(4800 * 4); eq.process(after)  // back on, over silence: no thump from the old memory
+        assertTrue(after.all { it == 0.toByte() })
+    }
+
+    @Test fun savedGainsThatArentNumbersAreIgnored() {
+        val g = Equalizer.decode(List(Equalizer.BANDS.size) { if (it == 3) "NaN" else "1.5" }.joinToString(","))
+        assertTrue(g.all { it == 0f })  // a damaged list falls back to Flat instead of reaching the audio thread
+    }
+
     @Test fun flatLeavesTheMusicUntouched() {
         val pcm = sine(1000.0, 8000.0); val copy = pcm.copyOf()
         Equalizer().process(pcm)

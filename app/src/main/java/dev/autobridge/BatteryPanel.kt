@@ -68,6 +68,7 @@ object BatteryInfo {
  * charge limit and (while charging) a moving sweep, then six charging details underneath.
  */
 class BatteryPanel(c: Context, private val k: Float) : View(c) {
+    private val tick = Runnable { invalidate() }
     private var info = BatteryInfo.of(Truck(), true, LocalTime.now())
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
@@ -126,7 +127,7 @@ class BatteryPanel(c: Context, private val k: Float) : View(c) {
                 val sx = il + (fx - il) * phase
                 fill(BLACK); p.shader = LinearGradient(sx - 120f, 0f, sx + 40f, 0f, intArrayOf(0x00FFFFFF, 0x66FFFFFF, 0x00FFFFFF), null, Shader.TileMode.CLAMP)
                 c.save(); c.clipRect(il, it, fx, ib); c.drawRect(sx - 120f, it, sx + 40f, ib, p); c.restore(); p.shader = null
-                postInvalidateDelayed(40)
+                removeCallbacks(tick); postDelayed(tick, 40)  // one pending redraw: any other redraw would start another chain
             }
         }
         line(BLACK, 4f); for (n in 1 until 20) { val x = il + (ir - il) * n / 20f; c.drawLine(x, it, x, ib, p) }  // cells

@@ -8,6 +8,13 @@ The truck app comes from the Play Store test. The phone app is on the [Releases]
 - Equalizer lights now hit on the beat: they wait for the speakers instead of showing the music about a second early.
 - Phone app: on home or work Wi-Fi it says "Not on the truck's hotspot" instead of asking for a password in amber.
 - Security: the truck and the phone app now check each other before Android Auto starts. Each proves it knows the hotspot password, so another device on the hotspot can't pose as the phone (to hear the cabin mic or see the truck's location) or as the truck (to see your phone's screen). Update both apps together: 0.8.1 won't connect to a 0.8.0 phone app or truck app. The phone app needs the hotspot password saved (Password).
+- Charging: the charge-port glow and battery sweep no longer pile up into a full-speed redraw; AutoBridge's screen work while idle is less than half what it was.
+- Fixed: leaving AutoBridge's screen while the picture was starting could crash the app and drop Android Auto. A decoder error now restarts the picture instead of freezing it, and the "use 1080p next time" fallback only kicks in when H.265 really showed nothing.
+- Fixed: after one failed start, the microphone (Google Assistant) stayed silent until the phone reconnected.
+- Smoother: album art no longer stalls sound and picture at song changes; disconnecting no longer freezes the screen for 200 ms; the phone's Screenshot button no longer freezes touches; switching an EQ preset no longer clicks.
+- Truck GPS is used only while Android Auto runs. A new truck with no phone app looks for it less often over time (up to every 2 minutes). The EQ lights stop measuring when AutoBridge leaves the screen.
+- AutoBridge no longer opens the permission screen at every start on cars that lack some of the newer car permissions.
+- Hotspot passwords are no longer copied into Android's cloud backup (both apps).
 - Fixed: AutoBridge no longer crashes at truck start or after an update when its Bluetooth permission hasn't been granted yet.
 
 ## 0.8.0

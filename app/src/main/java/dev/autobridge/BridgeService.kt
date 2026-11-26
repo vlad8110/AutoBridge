@@ -68,7 +68,9 @@ class BridgeService : Service() {
     private val main = Handler(Looper.getMainLooper())
     private val prefs by lazy { Settings(this) }
     private lateinit var audio: AudioOut
-    private val mic = Mic { pcm, n -> handle.takeIf { it != 0L }?.let { Native.mic(it, pcm, n) } }
+    /** Held while the mic thread calls into the session and while the session is freed, so a stuck mic can't use a freed one. */
+    private val micLock = Any()
+    private val mic = Mic { pcm, n -> synchronized(micLock) { handle.takeIf { it != 0L }?.let { Native.mic(it, pcm, n) } } }
     @Volatile private var handle = 0L
     private var sessionId = 0
     /** Video layout of the current session (null when no phone is connected). */
@@ -133,15 +135,19 @@ class BridgeService : Service() {
             types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         if (gpsAllowed()) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
         runCatching { startForeground(1, notification(), types) }.onFailure { Log.w(TAG, "foreground upgrade refused", it) }
-        watchGps()
+        locationAllowed = true
+        if (handle != 0L) watchGps()
     }
+
+    /** The location service type is on (the screen has been opened); GPS before that gets no fixes. */
+    private var locationAllowed = false
 
     private fun gpsAllowed() = checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     /** The truck's own GPS, passed to Android Auto so Maps doesn't depend on a phone in a pocket. */
     @SuppressLint("MissingPermission")  // checked by gpsAllowed()
     private fun watchGps() {
-        if (watchingGps || !gpsAllowed()) return
+        if (watchingGps || !locationAllowed || !gpsAllowed()) return
         val lm = getSystemService(LocationManager::class.java)
         if (!lm.allProviders.contains(LocationManager.GPS_PROVIDER)) { Log.w(TAG, "no GPS provider on this car"); return }
         watchingGps = true
@@ -149,7 +155,14 @@ class BridgeService : Service() {
         Log.i(TAG, "truck GPS: watching")
     }
 
-    /** Kept so onDestroy can remove it; otherwise an exited service keeps the GPS on and stays in memory. */
+    /** Only Android Auto uses the fixes: off between sessions, so a parked truck isn't polling GPS for hours. */
+    private fun stopGps() {
+        if (!watchingGps) return
+        runCatching { getSystemService(LocationManager::class.java).removeUpdates(gps) }
+        watchingGps = false
+    }
+
+    /** Kept so endSession/onDestroy can remove it; otherwise an exited service keeps the GPS on and stays in memory. */
     private val gps = LocationListener { l -> sendLocation(l) }
 
     private fun sendLocation(l: Location) {
@@ -165,7 +178,7 @@ class BridgeService : Service() {
 
     override fun onDestroy() {
         running = false
-        if (watchingGps) runCatching { getSystemService(LocationManager::class.java).removeUpdates(gps) }
+        stopGps()
         runCatching { btServer?.close() }
         runCatching { logLine?.close() }
         runCatching { btLink?.close() }
@@ -258,12 +271,16 @@ class BridgeService : Service() {
      */
     private fun setupLoop() {
         var checkedIp: String? = null
+        var wait = 10_000L
         while (running) {
             val ip = phoneIp
-            if (Settings(this).wifi() == null || (ip != null && ip != checkedIp)) {
-                runCatching { checkWifi(quiet = true) }.onSuccess { if (it && ip != null) checkedIp = ip }
-            }
-            Thread.sleep(10_000)
+            if (prefs.wifi() == null || (ip != null && ip != checkedIp)) {
+                // No phone app answered: ask less often (up to every 2 min), since each ask tries the whole hotspot.
+                val answered = runCatching { checkWifi(quiet = true) }.getOrDefault(false)
+                if (answered && ip != null) checkedIp = ip
+                wait = if (answered) 10_000L else minOf(wait * 2, 120_000L)
+            } else wait = 10_000L
+            Thread.sleep(wait)
         }
     }
 
@@ -310,7 +327,8 @@ class BridgeService : Service() {
      * allows car -> phone connections). Tries every address in our /24 at once, for up to ~30 s.
      */
     private fun connectToPhone(carIp: String) {
-        val password = Settings(this).wifi()?.password ?: return
+        if (handle != 0L) return  // already running; a dead session is ended by the watchdog within 5 s, then the phone is invited again
+        val password = prefs.wifi()?.password ?: return
         if (!searching.compareAndSet(false, true)) return
         val pool = java.util.concurrent.Executors.newFixedThreadPool(64)
         try {
@@ -399,6 +417,7 @@ class BridgeService : Service() {
         startedAt = System.currentTimeMillis(); pinged = false
         handle = Native.start(fd, plan.toArray(), truck.toArray(), gpsAllowed(), Callbacks(++sessionId, plan))
         main.removeCallbacks(watchdog); main.postDelayed(watchdog, 2000)
+        watchGps()
         Log.i(TAG, "video offered: ${if (plan.hevc) "H.265" else "H.264"} " + plan.configs.joinToString { "${it.codecW}x${it.codecH}" })
         pushSensors()
         say("Android Auto connected")
@@ -410,9 +429,10 @@ class BridgeService : Service() {
 
     private fun endSession() {
         mic.open(false)  // joins the mic thread, so it can't write into a freed session
+        stopGps()
         main.removeCallbacks(watchdog)
         val h = handle
-        handle = 0
+        synchronized(micLock) { handle = 0 }
         if (h != 0L) Native.stop(h)
         audio.release()
         NowPlaying.disconnected()
@@ -529,11 +549,12 @@ class BridgeService : Service() {
             val handshakeDone = pinged || handle.takeIf { it != 0L }?.let { Native.sincePingMs(it) >= 0 } == true
             main.post {
                 if (id == sessionId) {
+                    val neverShown = decoder?.let { it.shown && !it.decoded } == true  // read before endSession releases it
                     endSession()
                     say("Disconnected: $reason")
                     if (reason != "phone disconnected") {
                         // H.265 never produced a picture: use the proven 1080p H.264 from the next connection on.
-                        if (plan.hevc && firstFrame && handshakeDone) {  // a drop mid-handshake isn't H.265's fault
+                        if (plan.hevc && neverShown && handshakeDone) {  // a drop mid-handshake isn't H.265's fault
                             Settings(this@BridgeService).hevcFailed = true
                             say("Sharper picture (H.265) didn't start; using 1080p next time")
                         }
@@ -637,7 +658,7 @@ class BridgeService : Service() {
 }
 
 /** Wi-Fi details the phone is given (the car's own hotspot). */
-class Settings(context: Context) {
+class Settings(private val context: Context) {
     private val p = context.getSharedPreferences("autobridge", Context.MODE_PRIVATE)
     var ssid: String get() = p.getString("ssid", "")!!; set(v) = p.edit().putString("ssid", v.trim()).apply()
     var password: String get() = p.getString("password", "")!!; set(v) = p.edit().putString("password", v).apply()
@@ -648,7 +669,7 @@ class Settings(context: Context) {
     var hevcFailed: Boolean
         get() = p.getLong("hevcFailedIn", -1) == version
         set(v) = p.edit().putLong("hevcFailedIn", if (v) version else -1).apply()
-    private val version = context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
+    private val version by lazy { context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode }  // a binder call: only when needed
 
     /** The truck bar under Android Auto (settings page). */
     // commit(), not apply(): changing these restarts the process right after (SettingsPanel), which would lose a pending write.

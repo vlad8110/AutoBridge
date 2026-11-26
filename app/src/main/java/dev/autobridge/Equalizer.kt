@@ -134,7 +134,10 @@ class Equalizer(private val rate: Int = 48_000) {
         dirty = false
         val g = gains
         coef = Array(BANDS.size) { if (it == AIR) highShelf(BANDS[it], g[it].toDouble()) else peaking(BANDS[it], g[it].toDouble(), Q) }
+        val was = active
         active = g.indices.filter { g[it] != 0f }.toIntArray()
+        // A band coming back on starts clean: its old filter memory, from minutes ago, would click.
+        for (b in active) if (b !in was) { state[0][b].fill(0.0); state[1][b].fill(0.0) }
         // Neighbouring boosts add up, so the headroom comes from the real peak of the whole curve.
         val peak = (0..240).maxOf { k -> gainAt(20.0 * 1000.0.pow(k / 240.0)) }
         preamp = 1 / peak.coerceAtLeast(1.0)
@@ -208,7 +211,7 @@ class Equalizer(private val rate: Int = 48_000) {
         private const val RING = 64  // ~2 s of readings: more than the speaker buffer
         fun encode(g: FloatArray) = g.joinToString(",") { it.toString() }
         fun decode(s: String?): FloatArray =
-            s?.split(',')?.mapNotNull { it.toFloatOrNull()?.coerceIn(-MAX_DB, MAX_DB) }?.takeIf { it.size == BANDS.size }?.toFloatArray()
+            s?.split(',')?.mapNotNull { it.toFloatOrNull()?.takeIf { g -> g.isFinite() }?.coerceIn(-MAX_DB, MAX_DB) }?.takeIf { it.size == BANDS.size }?.toFloatArray()
                 ?: FloatArray(BANDS.size)
     }
 }

@@ -268,6 +268,7 @@ class TruckBar(context: Context) : FrameLayout(context) {
         private var glow: android.graphics.Shader? = null
         private var glowColor = 0
         private var state = -1
+        private val tick = Runnable { invalidate() }
         fun set(s: Int) {
             if (s == state) return
             state = s; contentDescription = "Charge port ${WORDS[s].lowercase()}"; invalidate()
@@ -281,7 +282,7 @@ class TruckBar(context: Context) : FrameLayout(context) {
                 var a = 0.22f
                 if (state == CHARGING) {  // the glow breathes while charging
                     a = 0.11f + 0.11f * kotlin.math.sin(android.os.SystemClock.uptimeMillis() / 1800f * 2 * Math.PI.toFloat())
-                    postInvalidateDelayed(60)
+                    removeCallbacks(tick); postDelayed(tick, 60)  // one pending redraw: any other redraw would start another chain
                 }
                 // Built once per colour, faded with the paint's alpha (it scales the whole gradient): this redraws
                 // ~16 times a second for hours while charging, so no new gradient per frame.
