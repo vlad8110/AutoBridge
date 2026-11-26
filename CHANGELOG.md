@@ -3,6 +3,9 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test; the phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page.
 
+## 0.6.6 (truck app only)
+- Screenshots now capture the whole truck screen: Android Auto plus the truck bar, and the settings or EQ page when one is open.
+
 ## 0.6.5 (phone app only)
 - Fixed: a new truck couldn't get its hotspot details while AutoBridge Phone was in the background. The phone app now remembers the hotspot from the last time it was open.
 

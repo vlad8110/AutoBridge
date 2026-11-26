@@ -32,6 +32,8 @@ import java.io.ByteArrayOutputStream
 /** Full-screen Android Auto projection, with a status panel while no phone is connected. */
 class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var root: FrameLayout
+    /** Everything on screen: Android Auto, the truck bar and the settings pages on top. */
+    private lateinit var screen: FrameLayout
     private lateinit var surface: SurfaceView
     private lateinit var panel: LinearLayout
     private lateinit var status: TextView
@@ -73,7 +75,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             }
         }
         // Android Auto gets the area above the bar; it re-measures from root's size at the next connection.
-        setContentView(FrameLayout(this).apply {
+        screen = FrameLayout(this)
+        setContentView(screen.apply {
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
                 setBackgroundColor(Color.BLACK)
@@ -147,17 +150,27 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
      * The video comes from PixelCopy (a SurfaceView isn't in the normal drawing), then every other
      * view is drawn over it. Drawing the SurfaceView itself would clear the video, so it's skipped.
      */
+    /**
+     * The whole screen as a PNG: whatever is showing (Android Auto, the truck bar, settings, EQ). The video is
+     * on its own layer that View.draw can't see; drawing the SurfaceView leaves its area transparent, so the
+     * video is copied separately and laid in underneath, showing only where nothing covers it.
+     */
     private fun screenshot(done: (ByteArray?) -> Unit) {
-        if (root.width == 0) return done(null)
-        val shot = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
-        val c = Canvas(shot).apply { drawColor(Color.BLACK) }
+        if (screen.width == 0) return done(null)
+        val shot = Bitmap.createBitmap(screen.width, screen.height, Bitmap.Config.ARGB_8888)
+        val c = Canvas(shot)
+        // The black behind Android Auto would hide the video laid in underneath; leave it out of this one drawing.
+        val behind = listOf(root, root.parent as View)
+        val saved = behind.map { it.background }
+        behind.forEach { it.background = null }
+        try { screen.draw(c) } finally { behind.zip(saved).forEach { (v, b) -> v.background = b } }
         fun finish(video: Bitmap?) {
-            video?.let { c.drawBitmap(it, surface.left.toFloat(), surface.top.toFloat(), null) }
-            for (i in 0 until root.childCount) {
-                val v = root.getChildAt(i)
-                if (v === surface || v.visibility != View.VISIBLE) continue
-                c.save(); c.translate(v.left.toFloat(), v.top.toFloat()); v.draw(c); c.restore()
+            val under = android.graphics.Paint().apply { xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OVER) }
+            video?.let {
+                val at = IntArray(2).also(surface::getLocationInWindow); val origin = IntArray(2).also(screen::getLocationInWindow)
+                c.drawBitmap(it, (at[0] - origin[0]).toFloat(), (at[1] - origin[1]).toFloat(), under)
             }
+            c.drawColor(Color.BLACK, android.graphics.PorterDuff.Mode.DST_OVER)
             done(ByteArrayOutputStream().also { shot.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray())
         }
         if (BridgeService.instance?.video == null || !surface.holder.surface.isValid || surface.width == 0) return finish(null)
