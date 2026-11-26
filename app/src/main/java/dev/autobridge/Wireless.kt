@@ -12,7 +12,6 @@ import java.io.OutputStream
  */
 object Wireless {
     const val UUID = "4de17a00-52cb-11e6-bdf4-0800200c9a66"
-    const val PORT = 5288
 
     // The car's hotspot blocks phone -> car connections, so the AutoBridge Phone app relays:
     // Android Auto connects to the relay on its own phone (127.0.0.1:PHONE_AA_PORT) and the car
@@ -25,7 +24,8 @@ object Wireless {
     const val PHONE_LOG_REQUEST_PORT = 5302
     /** A truck with no Wi-Fi details asks the phone app for them here. Must match RelayService.SETUP_PORT. */
     const val PHONE_SETUP_PORT = 5303
-    private val MAC = Regex("([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}")
+    /** A BSSID: six pairs of hex digits joined by colons. */
+    val MAC = Regex("([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}")
 
     /**
      * The phone app's answer: "AUTOBRIDGE-WIFI", SSID, BSSID, password, one per line.
@@ -57,6 +57,11 @@ object Wireless {
         if (wrong.isEmpty()) return null to "Wi-Fi check: ${w.ssid} matches your phone"
         return w to "Wi-Fi check: fixed the hotspot ${wrong.joinToString(" and ")} to match your phone (${w.ssid})"
     }
+
+        /** "021A2b" -> "02:1a:2b": keeps only hex digits (12 at most), lower case, a colon after every 2. */
+    fun colonize(typed: String) = typed.filter { it.isDigit() || it.lowercaseChar() in 'a'..'f' }.take(12).lowercase().chunked(2).joinToString(":")
+    /** Where the cursor goes in a colonized BSSID after [chars] hex characters: 2 -> 2, 3 -> 4 ("02:1"), 4 -> 5. */
+    fun cursorAfter(chars: Int) = if (chars <= 0) 0 else chars + (chars - 1) / 2
 
     /** Which parts of two hotspot details differ: "name", "BSSID", "password". */
     fun differences(a: Wifi, b: Wifi) = listOfNotNull(
@@ -93,7 +98,7 @@ object Wireless {
      * (without it the phone joins the Wi-Fi but never connects), and the start request follows its reply.
      */
     fun handshake(
-        input: InputStream, output: OutputStream, ip: String, wifi: () -> Wifi, port: Int = PORT,
+        input: InputStream, output: OutputStream, ip: String, wifi: () -> Wifi, port: Int,
         onPhoneOnWifi: () -> Unit = {}, onLink: (invite: () -> Unit) -> Unit = {}, busy: () -> Boolean = { false },
         log: (String) -> Unit,
     ) {
@@ -134,9 +139,9 @@ object Wireless {
 
     private fun endpoint(ip: String, port: Int) = Proto().string(1, ip).varint(2, port.toLong()).bytes()
 
-    fun versionRequest(ip: String, port: Int = PORT): ByteArray = Proto().varint(1, 4).varint(2, 1).message(6, endpoint(ip, port)).bytes()
+    fun versionRequest(ip: String, port: Int): ByteArray = Proto().varint(1, 4).varint(2, 1).message(6, endpoint(ip, port)).bytes()
 
-    fun startRequest(ip: String, wifi: Wifi, port: Int = PORT): ByteArray {
+    fun startRequest(ip: String, wifi: Wifi, port: Int): ByteArray {
         val ap = Proto().string(1, wifi.ssid).string(2, wifi.password).string(3, wifi.bssid.lowercase())
             .varint(4, WPA2_PERSONAL.toLong())
         CHANNELS.forEach { ap.varint(6, it.toLong()) }

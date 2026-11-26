@@ -12,4 +12,9 @@ class ConsoleTest {
         assertEquals(Console.Kind.FAIL, Console.kind("Disconnected: control: AASDK Error: 33"))  // "connected" is inside "Disconnected"
         assertEquals(Console.Kind.FAIL, Console.kind("Phone app not found. Is AutoBridge Phone installed and running on the phone?"))
     }
+
+    @Test fun failuresAreNeverOk() {
+        for (line in listOf("Screenshot not sent: connect timed out", "No phone found yet, so logs can't be sent", "Screenshot failed", "Wi-Fi check failed: timeout"))
+            assertEquals(line, Console.Kind.FAIL, Console.kind(line))
+    }
 }

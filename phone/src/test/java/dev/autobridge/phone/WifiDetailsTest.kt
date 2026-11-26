@@ -13,10 +13,9 @@ class WifiDetailsTest {
         assertEquals(5, WifiDetails.channelOf(5975))    // 6 GHz
     }
 
-    @Test fun bandAndText() {
+    @Test fun bandAndChannel() {
         val d = WifiDetails("MyTruck", "02:1a:2b:3c:4d:5e", 5240)
-        assertEquals("5 GHz", d.band)
-        assertEquals("Network (SSID): MyTruck\nBSSID: 02:1a:2b:3c:4d:5e\nChannel: 48 (5 GHz, 5240 MHz)", d.asText())
+        assertEquals("5 GHz", d.band); assertEquals(48, d.channel)
     }
 }
 

@@ -28,8 +28,10 @@ class RelayService : Service() {
         const val LOG_PORT = 5301  // must match Wireless.PHONE_LOG_PORT in the car app
         const val LOG_REQUEST_PORT = 5302  // must match Wireless.PHONE_LOG_REQUEST_PORT in the car app
         const val SETUP_PORT = 5303  // must match Wireless.PHONE_SETUP_PORT in the car app
-        /** The status line while a session runs; the app's status panel looks for it. */
+        /** The status line when a session starts. */
         const val RUNNING = "Android Auto is running through the truck"
+        /** True while Android Auto runs through the relay (the app's headline; a status line can scroll out of the history). */
+        @Volatile var aaRunning = false
         @Volatile private var carLine: Socket? = null
 
         /** Asks the truck for its log over the line the truck keeps open; false if the truck isn't connected. */
@@ -43,6 +45,8 @@ class RelayService : Service() {
                    catch (_: IOException) { runCatching { s.close() }; carLine = null; false }
         }
         @Volatile var status = "Starting…"
+        /** The same steps with when they happened (epoch ms), for the app's "Last hour" list. */
+        @Volatile var events: List<Pair<Long, String>> = emptyList()
         var onStatus: ((String) -> Unit)? = null
 
         fun start(context: Context) = context.startForegroundService(Intent(context, RelayService::class.java))
@@ -55,6 +59,8 @@ class RelayService : Service() {
     private val servers = mutableListOf<ServerSocket>()
     /** The address the truck's session came from; only it may send logs or hold the log-request line. */
     @Volatile private var carAddress: InetAddress? = null
+    /** Counts sessions, so an old pipe ending late can't mark a newer session stopped. */
+    private var sessions = 0
 
     private fun fromCar(s: Socket): Boolean {
         val car = carAddress
@@ -123,10 +129,16 @@ class RelayService : Service() {
             waitingAa = null
             waitingCar = null
             carAddress = c.inetAddress  // set only once Android Auto really runs through it: a stray connect can't claim it
-            a to c
+            aaRunning = true
+            Triple(a, c, ++sessions)
         }
         say(RUNNING)
-        pipe(pair.first, pair.second)
+        // Evidence for locking the relay to the truck: is the truck the hotspot's router? (shortcut: logged only,
+        // not enforced, until a real drive shows it is; then reject car connections from any other address.)
+        val gw = runCatching { getSystemService(android.net.wifi.WifiManager::class.java).dhcpInfo.gateway }.getOrDefault(0)
+        val router = if (gw == 0) null else InetAddress.getByAddress(byteArrayOf(gw.toByte(), (gw shr 8).toByte(), (gw shr 16).toByte(), (gw shr 24).toByte()))
+        say("Truck at ${pair.second.inetAddress?.hostAddress}: ${if (router == pair.second.inetAddress) "the hotspot router" else "not the router (${router?.hostAddress ?: "unknown"})"}")
+        pipe(pair.first, pair.second, pair.third)
     }
 
     /** A truck without Wi-Fi details asks for the hotspot we're on; only answered once its password is saved here. */
@@ -150,11 +162,12 @@ class RelayService : Service() {
         }
     }
 
-    private fun pipe(a: Socket, b: Socket) {
+    private fun pipe(a: Socket, b: Socket, session: Int) {
         fun copy(from: Socket, to: Socket) = thread {
             try { from.getInputStream().copyTo(to.getOutputStream(), 64 * 1024) } catch (_: IOException) {}
             runCatching { a.close() }
             runCatching { b.close() }
+            synchronized(lock) { if (session == sessions) aaRunning = false }
             say("Android Auto stopped. Waiting for the truck.")
         }
         copy(a, b)
@@ -162,14 +175,16 @@ class RelayService : Service() {
     }
 
     private val recent = ArrayDeque<String>()
+    private val recentAt = ArrayDeque<Long>()
 
     /** Keeps the last few steps on screen, so a screenshot shows which side never arrived. */
     @Synchronized private fun say(text: String) {
         Log.i("AutoBridgePhone", text)
         if (recent.lastOrNull()?.endsWith("  $text") == true) return  // both pipe directions report the same end
         val time = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date())
-        recent.addLast("$time  $text")
-        if (recent.size > 8) recent.removeFirst()
+        recent.addLast("$time  $text"); recentAt.addLast(System.currentTimeMillis())
+        if (recent.size > 20) { recent.removeFirst(); recentAt.removeFirst() }  // the app shows 3, and the last hour's 10 on tap
+        events = recentAt.zip(recent)
         status = recent.joinToString("\n")
         onStatus?.invoke(status)
     }

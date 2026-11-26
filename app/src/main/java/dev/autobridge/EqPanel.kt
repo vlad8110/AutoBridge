@@ -23,7 +23,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
     private val eq = Equalizer.music
     private val bands = EqView(context, k) { g -> eq.gains = g; save(CUSTOM) }
     private val presetViews = mutableMapOf<String, TextView>()
-    private val power = text(30f)
+    private val power = text(32f)
 
     init {
         setBackgroundColor(BLACK)
@@ -39,23 +39,26 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                     addView(text(26f, MUTED).apply { text = "SOUND"; letterSpacing = 0.25f })
                     addView(text(64f, light = true).apply { text = "Equalizer" })
                 }, LinearLayout.LayoutParams(0, -2, 1f))
-                addView(power.apply { gravity = Gravity.CENTER; letterSpacing = 0.02f; setOnClickListener { eq.enabled = !eq.enabled; s.eqEnabled = eq.enabled; refresh() } },
-                    LinearLayout.LayoutParams(px(240), px(110)))
-                addView(button("Done") { close() }, LinearLayout.LayoutParams(px(240), px(110)).apply { marginStart = px(22) })
-                // Filled like the settings page's own Android Auto button: the way back to driving.
-                addView(button("Android Auto", primary = true) { toAndroidAuto() }, LinearLayout.LayoutParams(px(300), px(110)).apply { marginStart = px(22) })
+                addView(power.apply {
+                    gravity = Gravity.CENTER; letterSpacing = 0.02f; setPadding(0, 0, 0, px(6))
+                    Lamp.style(this, k, px(20).toFloat(), momentary = false)
+                    setOnClickListener { eq.enabled = !eq.enabled; s.eqEnabled = eq.enabled; refresh() }
+                }, LinearLayout.LayoutParams(px(240), px(110)))
+                addView(Lamp.button(context, k, "Android Auto", 32f) { toAndroidAuto() }, LinearLayout.LayoutParams(px(300), px(110)).apply { marginStart = px(22) })
+                // Back to settings: a gear, last in the row.
+                addView(GearView(context).apply {
+                    contentDescription = "Settings"; setPadding(px(37), px(22), px(37), px(30))
+                    Lamp.style(this, k, px(20).toFloat()); setOnClickListener { close() }
+                }, LinearLayout.LayoutParams(px(130), px(110)).apply { marginStart = px(22) })
             })
             addView(text(26f, MUTED).apply { text = "PRESETS"; letterSpacing = 0.22f }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(48); bottomMargin = px(18) })
             addView(LinearLayout(context).apply {
+                // A dragged band is "Custom": no preset stays lit.
                 Equalizer.PRESETS.forEachIndexed { i, (name, gains) ->
-                    val b = button(name) { eq.gains = gains; bands.gains = gains.copyOf(); save(name) }
+                    val b = Lamp.button(context, k, name, 27f, 18f, momentary = false) { eq.gains = gains; bands.gains = gains.copyOf(); save(name) }.apply { minWidth = 0; setPadding(0, 0, 0, px(6)) }
                     presetViews[name] = b
                     addView(b, LinearLayout.LayoutParams(0, px(100), 1f).apply { if (i > 0) marginStart = px(16) })
                 }
-                // Not tappable: it lights up once you drag a band yourself.
-                val custom = button(CUSTOM) {}.apply { isClickable = false }
-                presetViews[CUSTOM] = custom
-                addView(custom, LinearLayout.LayoutParams(0, px(100), 1f).apply { marginStart = px(16) })
             })
             addView(bands.apply { background = TruckBar.chamfer(BLACK, OUTLINE, px(40).toFloat()) },
                 LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = px(40) })
@@ -68,8 +71,11 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
 
     fun open() { eq.metering = true; bands.gains = eq.gains.copyOf(); refresh(); visibility = VISIBLE; bands.invalidate() }
 
+    /** Called after the page closes, so settings can update its Equalizer light. */
+    var onClosed: (() -> Unit)? = null
+
     /** True if the page was open. */
-    fun close(): Boolean = (visibility == VISIBLE).also { visibility = GONE; eq.metering = false }
+    fun close(): Boolean = (visibility == VISIBLE).also { if (it) { visibility = GONE; eq.metering = false; onClosed?.invoke() } }
 
     private fun save(preset: String) {
         s.eqGains = Equalizer.encode(eq.gains); s.eqPreset = preset
@@ -79,14 +85,9 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
 
     private fun refresh() {
         val current = s.eqPreset
-        presetViews.forEach { (name, v) ->
-            val on = name == current
-            v.setTextColor(if (on) BLUE else WHITE)
-            v.background = TruckBar.chamfer(if (on) NAVY else BLACK, if (on) BLUE else OUTLINE, px(18).toFloat())
-        }
+        presetViews.forEach { (name, v) -> Lamp.lit(v, name == current) }
         power.text = if (eq.enabled) "EQ on" else "EQ off"
-        power.setTextColor(if (eq.enabled) BLUE else MUTED)
-        power.background = TruckBar.chamfer(BLACK, if (eq.enabled) BLUE else OUTLINE, px(20).toFloat())  // outlined: a switch, not the Done button
+        Lamp.lit(power, eq.enabled)
         bands.dim = !eq.enabled; bands.invalidate()
     }
 
@@ -97,10 +98,19 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         typeface = Typeface.create(if (light) "sans-serif-light" else "sans-serif", Typeface.NORMAL)
     }
 
-    private fun button(label: String, primary: Boolean = false, onClick: () -> Unit) = text(if (primary) 32f else 26f, if (primary) BLUE else WHITE).apply {
-        text = label; gravity = Gravity.CENTER; letterSpacing = 0.02f; maxLines = 1
-        background = TruckBar.chamfer(if (primary) NAVY else BLACK, if (primary) BLUE else OUTLINE, px(18).toFloat())
-        setOnClickListener { onClick() }
+    /** A settings gear, white: eight teeth around a ring. */
+    private class GearView(c: Context) : View(c) {
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val tooth = RectF()
+        override fun onDraw(c: Canvas) {
+            val w = width - paddingLeft - paddingRight; val h = height - paddingTop - paddingBottom
+            val r = minOf(w, h) / 2f; val cx = paddingLeft + w / 2f; val cy = paddingTop + h / 2f
+            p.style = Paint.Style.FILL; p.color = WHITE
+            tooth.set(cx - r * 0.17f, cy - r, cx + r * 0.17f, cy - r * 0.5f)
+            for (i in 0 until 8) { c.save(); c.rotate(i * 45f, cx, cy); c.drawRoundRect(tooth, r * 0.06f, r * 0.06f, p); c.restore() }
+            c.drawCircle(cx, cy, r * 0.74f, p)
+            p.color = BLACK; c.drawCircle(cx, cy, r * 0.32f, p)
+        }
     }
 
     /** All 10 bands in one view: grid, a smooth curve through the knobs, and dB values; drag to set. */
@@ -117,7 +127,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         private fun y(db: Float) = top + (bottom - top) * (Equalizer.MAX_DB - db) / (2 * Equalizer.MAX_DB)
 
         override fun onDraw(c: Canvas) {
-            val accent = if (dim) MUTED else BLUE
+            val accent = if (dim) MUTED else WHITE
             p.typeface = Typeface.create("sans-serif", Typeface.NORMAL)
             // grid: +12, +6, 0, -6, -12 dB
             for (db in listOf(12f, 6f, 0f, -6f, -12f)) {
@@ -163,7 +173,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
             val eq = Equalizer.music
             val live = eq.metering && System.nanoTime() / 1_000_000 - eq.levelsAt < 250  // music stopped: let them fall
             val segH = (bottom - top) / SEGMENTS
-            val half = (right - left) / gains.size * 0.33f
+            val half = (right - left) / gains.size * 0.165f  // 0.8: half as wide as 0.7
             p.style = Paint.Style.FILL
             for (i in gains.indices) {
                 val target = if (live) eq.levels[i] else 0f
@@ -202,12 +212,6 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
 
     private companion object {
         const val CUSTOM = "Custom"
-        const val WHITE = 0xFFF1F3F4.toInt()
-        const val MUTED = 0xFF9AA0A6.toInt()
-        const val BLUE = 0xFF8AB4F8.toInt()
-        const val NAVY = 0xFF0D1B2E.toInt()
-        const val BLACK = 0xFF000000.toInt()
-        const val OUTLINE = 0xFF8E939B.toInt()
         // A stereo level meter's lights.
         const val SEGMENTS = 18
         const val LED_GREEN = 0xFF3CF05A.toInt()

@@ -1,7 +1,16 @@
 # Changelog
 
 What changed in each AutoBridge version since the project went public (November 23, 2026).
-The truck app comes from the Play Store test; the phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page.
+The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
+
+## 0.8.0
+- New look on both apps: black buttons with white text, a red light inside each button that shows what's on, and a spring when pressed. No more blue anywhere; the waiting screen is black.
+- Truck bar: grey outline like every other card, all text white; only the power (kW) is coloured, green charging, red driving.
+- Settings: Equalizer and Android Auto buttons under the truck name (the Equalizer light shows the EQ is on; the play sign turns red while Android Auto runs), then the phone and quiet system details. The battery card is white with only power coloured, and shows power while driving. Updates live when Android Auto starts or stops.
+- Equalizer: research-based presets for the Sierra EV's Bose system, including a new gentle "Truck" preset; the top band is now an "Air" treble shelf (the old 16 kHz band barely worked); a soft limiter replaces hard clipping; LED lights half as wide; a settings gear replaces Done.
+- Hotspot details: a bigger dialog you can read while typing, an eye to show the password, and colons added to the BSSID automatically. Warnings clear as you fix them.
+- Phone app: the same buttons as the truck, a Recent card with the newest 3 events (tap for the last hour), and a clearer connected status that no longer gets confused after several log sends.
+- Failures on the waiting screen are marked FAIL, not OK. The dashboard media card no longer shows the last drive's song at start-up.
 
 ## 0.7.4 (truck app only)
 - Equalizer: each band is now a column of LED meter lights (green, yellow, red) that move with the music actually playing, like a stereo's level meter. They dim when EQ is off and fall dark when the music stops. Measured only while the EQ page is open.

@@ -44,7 +44,6 @@ class BridgeService : Service() {
         /** Latest status line for the UI; also delivered to [onStatus]. */
         @Volatile var status = "Starting…"
         /** The truck bar's text (null: the truck shares nothing); also delivered to [onTruck]. */
-        @Volatile var truckText: String? = null
         var onTruck: ((Truck) -> Unit)? = null
         /** Set while AutoBridge's screen is in front: captures it as a PNG (null if it can't). */
         var capture: ((done: (ByteArray?) -> Unit) -> Unit)? = null
@@ -53,9 +52,9 @@ class BridgeService : Service() {
         /** Name of the phone that last connected over Bluetooth (settings page). */
         @Volatile var phoneName: String? = null
         const val EXTRA_BOOT = "boot"
-        /** Phone silent this long = gone. Its pings normally come every second or so (logged at session start). */
         /** No first ping this long after connecting: the handshake died (Wi-Fi dropped mid-way). */
         const val FIRST_PING_MS = 60_000L  // room for a new phone's first-time Android Auto screens
+        /** Phone silent this long = gone. Its pings normally come every second or so (logged at session start). */
         const val PING_SILENCE_MS = 5_000L  // pings come every 1.0 s; the longest gap seen on the truck was 1.7 s
         var onStatus: ((String) -> Unit)? = null
         var onVideoActive: ((Boolean) -> Unit)? = null
@@ -74,6 +73,9 @@ class BridgeService : Service() {
     private var sessionId = 0
     /** Video layout of the current session (null when no phone is connected). */
     var video: VideoConfig? = null
+        private set
+    /** The running session's codec, for the settings page. */
+    @Volatile var hevc = false
         private set
     private var decoder: VideoDecoder? = null
     private var car: Car? = null
@@ -228,10 +230,6 @@ class BridgeService : Service() {
         }
     }
 
-    /**
-     * Finds the AutoBridge Phone relay on the hotspot and connects out to it (the hotspot only
-     * allows car -> phone connections). Tries every address in our /24 at once, for up to ~30 s.
-     */
     /** One pass over every address in the car's /24: the first that accepts on [port], or null. */
     private fun sweep(pool: java.util.concurrent.ExecutorService, carIp: String, port: Int): Socket? {
         val prefix = carIp.substringBeforeLast('.')
@@ -306,6 +304,10 @@ class BridgeService : Service() {
         return reply != null
     }
 
+    /**
+     * Finds the AutoBridge Phone relay on the hotspot and connects out to it (the hotspot only
+     * allows car -> phone connections). Tries every address in our /24 at once, for up to ~30 s.
+     */
     private fun connectToPhone(carIp: String) {
         if (!searching.compareAndSet(false, true)) return
         val pool = java.util.concurrent.Executors.newFixedThreadPool(64)
@@ -380,7 +382,7 @@ class BridgeService : Service() {
         endSession()
         val plan = Display.config(this)
         val v = plan.main
-        video = v
+        video = v; hevc = plan.hevc
         decoder = VideoDecoder(plan.mime, v.codecW, v.codecH) {
             // Re-sending video focus makes the phone send a fresh key frame.
             // On main, like every other caller: endSession there frees the session, so the handle can't go stale mid-call.
@@ -425,7 +427,6 @@ class BridgeService : Service() {
 
     fun key(code: Int) { handle.takeIf { it != 0L }?.let { Native.key(it, code) } }
 
-    /** Saves a log file on the phone (Phone Sync folder), over the hotspot. [auto]: after a failure, at most every 2 min. */
     /**
      * The phone can't connect to the car (the hotspot blocks it), so the car keeps a line open to the
      * phone app; each 'L' the phone sends on it asks for a log.
@@ -469,6 +470,7 @@ class BridgeService : Service() {
         }
     }
 
+    /** Saves a log file on the phone, over the hotspot. [auto]: after a failure, at most every 2 min. */
     fun sendLogs(reason: String, auto: Boolean = false) {
         val now = System.currentTimeMillis()
         if (auto && now - lastAutoLog < 120_000) return
@@ -482,7 +484,7 @@ class BridgeService : Service() {
                 "Hotspot: ${s.ssid} / ${s.bssid}, car ${carIp()}, phone $ip",  // never the password
                 "Screen: ${s.viewW}x${s.viewH}, video: ${video?.let { "${it.codecW}x${it.codecH}" } ?: "not connected"}, H.265 ${if (s.hevcFailed) "failed in this version" else "allowed"}",
                 "GPS: ${if (gpsAllowed()) "allowed" else "not allowed"}, voice button: ${VoiceAssistant.status(this)}",
-                "Truck: ${truckText ?: "nothing shared"}",
+                "Truck: $latestTruck",
                 "Route: ${ClusterNav.route}, cluster ${if (ClusterNav.sink != null) "bound" else "not bound"}",
                 "Status: " + synchronized(this) { recent.joinToString(" | ") },
                 "Car permissions: ${TruckProbe.permissions(this)}",
@@ -580,7 +582,6 @@ class BridgeService : Service() {
                     else -> truck
                 }
                 if (v.propertyId in AA_PROPS) pushSensors()
-                truckText = truck.line(miles = truck.miles ?: (java.util.Locale.getDefault().country in setOf("US", "GB")))
                 latestTruck = truck
                 val t = truck
                 main.post { onTruck?.invoke(t) }

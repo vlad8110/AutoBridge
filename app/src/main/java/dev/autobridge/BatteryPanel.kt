@@ -23,9 +23,10 @@ object BatteryInfo {
         val energy: String, val range: String, val rangeUnit: String, val state: State,
         val power: String, val timeLabel: String, val timeLeft: String, val readyBy: String,
         val adding: String, val toAddLabel: String, val toAdd: String, val current: String,
+        val powerOut: String = NONE,  // power leaving the battery while not charging (driving, climate)
     )
 
-    private const val NONE = "—"
+    const val NONE = "—"
 
     fun of(t: Truck, localeMiles: Boolean, now: LocalTime): Info {
         val miles = t.miles ?: localeMiles
@@ -57,6 +58,7 @@ object BatteryInfo {
             toAddLabel = limitText?.let { "TO $it" } ?: "TO LIMIT",
             toAdd = toAddWh?.let { if (it > 500) "${(it / 1000).roundToInt()} kWh" else "At limit" } ?: NONE,
             current = t.currentA?.let { "${it.roundToInt()} A" } ?: NONE,
+            powerOut = t.rateMw?.let { it / 1_000_000f }?.takeIf { !t.charging && it > 0f }?.let { "${BarText.number(it)} kW" } ?: NONE,
         )
     }
 }
@@ -70,7 +72,7 @@ class BatteryPanel(c: Context, private val k: Float) : View(c) {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
     fun show(t: Truck) {
-        info = BatteryInfo.of(t, Locale.getDefault().country in setOf("US", "GB", "LR", "MM"), LocalTime.now())
+        info = BatteryInfo.of(t, Truck.localeMiles(), LocalTime.now())
         contentDescription = "Battery ${info.percent ?: "unknown"} percent, ${info.state.label.lowercase()}, range ${info.range} ${info.rangeUnit}"
         if (height != (height() * k).roundToInt()) requestLayout()  // one row of details when not charging, two while charging
         invalidate()
@@ -90,23 +92,22 @@ class BatteryPanel(c: Context, private val k: Float) : View(c) {
         val w = width / k
         // card
         val card = Path().apply { moveTo(1f, 1f); lineTo(w - 30f, 1f); lineTo(w - 1f, 30f); lineTo(w - 1f, H - 1f); lineTo(1f, H - 1f); close() }
-        fill(BLACK); c.drawPath(card, p); line(if (charging) GREEN else OUTLINE, 2f); c.drawPath(card, p)
+        fill(BLACK); c.drawPath(card, p); line(OUTLINE, 2f); c.drawPath(card, p)
         // state pill
         val pill = i.state.label
         text(24f, false); p.letterSpacing = 0.12f; val pw = p.measureText(pill) + 44f  // measured as drawn
-        val pillColor = when (i.state) { BatteryInfo.State.CHARGING, BatteryInfo.State.FULL -> GREEN; BatteryInfo.State.PLUGGED -> BLUE; BatteryInfo.State.OPEN -> AMBER; else -> MUTED }
-        line(pillColor, 2f); c.drawRect(w - 44f - pw, 34f, w - 44f, 80f, p)
-        text(24f, false, pillColor); p.letterSpacing = 0.12f; c.drawText(pill, w - 44f - pw + 22f, 66f, p); p.letterSpacing = 0f
+        line(WHITE, 2f); c.drawRect(w - 44f - pw, 34f, w - 44f, 80f, p)
+        text(24f, false); p.letterSpacing = 0.12f; c.drawText(pill, w - 44f - pw + 22f, 66f, p); p.letterSpacing = 0f
         // headline: percent, energy, range
         text(120f, true); c.drawText(i.percent?.toString() ?: "—", 40f, 150f, p)
         val pctW = p.measureText(i.percent?.toString() ?: "—")
-        text(48f, false, LIGHT); c.drawText("%", 48f + pctW, 150f, p)
-        text(28f, false, MUTED); c.drawText(i.energy, 44f, 192f, p)
+        text(48f, false); c.drawText("%", 48f + pctW, 150f, p)
+        text(28f, false); c.drawText(i.energy, 44f, 192f, p)
         text(72f, true); val rw = p.measureText(i.range)
-        text(32f, false, LIGHT); val uw = p.measureText(" ${i.rangeUnit}")
+        text(32f, false); val uw = p.measureText(" ${i.rangeUnit}")
         text(72f, true); c.drawText(i.range, w - 44f - uw - rw, 150f, p)
-        text(32f, false, LIGHT); c.drawText(" ${i.rangeUnit}", w - 44f - uw, 150f, p)
-        text(26f, false, MUTED); p.textAlign = Paint.Align.RIGHT; c.drawText("Range", w - 44f, 192f, p); p.textAlign = Paint.Align.LEFT
+        text(32f, false); c.drawText(" ${i.rangeUnit}", w - 44f - uw, 150f, p)
+        text(26f, false); p.textAlign = Paint.Align.RIGHT; c.drawText("Range", w - 44f, 192f, p); p.textAlign = Paint.Align.LEFT
         // the pack
         val l = 44f; val r = w - 70f; val t = 252f; val b = 352f
         line(OUTLINE, 3f); c.drawRoundRect(RectF(l, t, r, b), 14f, 14f, p)
@@ -132,7 +133,7 @@ class BatteryPanel(c: Context, private val k: Float) : View(c) {
         i.limit?.let { lim ->
             val lx = il + (ir - il) * lim
             fill(WHITE); c.drawRect(lx - 3f, t - 14f, lx + 3f, b + 14f, p)
-            text(22f, false, LIGHT); p.textAlign = Paint.Align.CENTER; p.letterSpacing = 0.1f
+            text(22f, false); p.textAlign = Paint.Align.CENTER; p.letterSpacing = 0.1f
             c.drawText("LIMIT ${(lim * 100).roundToInt()}%", lx.coerceIn(l + 70f, r - 70f), t - 24f, p)
             p.textAlign = Paint.Align.LEFT; p.letterSpacing = 0f
         }
@@ -141,13 +142,15 @@ class BatteryPanel(c: Context, private val k: Float) : View(c) {
         val cells = if (charging) listOf(
             "POWER" to i.power, i.timeLabel to i.timeLeft, "READY BY" to i.readyBy,
             "ADDING" to i.adding, i.toAddLabel to i.toAdd, "CURRENT LIMIT" to i.current,
-        ) else listOf(i.toAddLabel to i.toAdd, "CURRENT LIMIT" to i.current)
+        ) else listOfNotNull(("POWER" to i.powerOut).takeIf { i.powerOut != BatteryInfo.NONE }, i.toAddLabel to i.toAdd, "CURRENT LIMIT" to i.current)
         val cw = (w - 88f) / 3
         line(0xFF2A2D31.toInt(), 2f); c.drawLine(44f, 396f, w - 44f, 396f, p)
         cells.forEachIndexed { n, (label, value) ->
             val x = 44f + cw * (n % 3); val y = 442f + (n / 3) * 96f
-            text(22f, false, MUTED); p.letterSpacing = 0.12f; c.drawText(label, x, y, p); p.letterSpacing = 0f
-            text(40f, false, if (charging && value != "—" && n < 4) GREEN else WHITE); c.drawText(value, x, y + 48f, p)
+            text(22f, false, LIGHT); p.letterSpacing = 0.12f; c.drawText(label, x, y, p); p.letterSpacing = 0f
+            // Only power is coloured: green going in, red going out.
+            val tone = when { label != "POWER" || value == BatteryInfo.NONE -> WHITE; charging -> GREEN; else -> RED }
+            text(40f, false, tone); c.drawText(value, x, y + 48f, p)
         }
         c.restore()
     }
@@ -166,15 +169,10 @@ class BatteryPanel(c: Context, private val k: Float) : View(c) {
 
     private companion object {
         const val H = 610f
-        const val WHITE = 0xFFF1F3F4.toInt()
-        const val LIGHT = 0xFFBDC1C6.toInt()
-        const val MUTED = 0xFF9AA0A6.toInt()
         const val GREEN = 0xFF81C995.toInt()
         const val MINT = GREEN  // one green everywhere (was a separate mint that clashed with the truck bar)
         const val AMBER = 0xFFF2BD64.toInt()
         const val LOW = 0xFFFF857D.toInt()
-        const val BLUE = 0xFF8AB4F8.toInt()
-        const val BLACK = 0xFF000000.toInt()
-        const val OUTLINE = 0xFF8E939B.toInt()
+        const val RED = 0xFFF28B82.toInt()
     }
 }

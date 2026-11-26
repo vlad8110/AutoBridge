@@ -22,7 +22,7 @@ class WirelessTest {
         }
         val car = ByteArrayOutputStream()
         try {
-            Wireless.handshake(ByteArrayInputStream(phone.toByteArray()), car, "10.0.0.1", { wifi }) {}
+            Wireless.handshake(ByteArrayInputStream(phone.toByteArray()), car, "10.0.0.1", { wifi }, Wireless.PHONE_AA_PORT) {}
         } catch (_: EOFException) { /* phone stream ended */ }
 
         val frames = mutableListOf<Pair<Int, ByteArray>>()
@@ -34,8 +34,8 @@ class WirelessTest {
             i += 4 + len
         }
         assertEquals(listOf(Wireless.VERSION_REQUEST, Wireless.START_REQUEST, Wireless.INFO_RESPONSE), frames.map { it.first })
-        assertArrayEquals(Wireless.versionRequest("10.0.0.1"), frames[0].second)
-        assertArrayEquals(Wireless.startRequest("10.0.0.1", wifi), frames[1].second)
+        assertArrayEquals(Wireless.versionRequest("10.0.0.1", Wireless.PHONE_AA_PORT), frames[0].second)
+        assertArrayEquals(Wireless.startRequest("10.0.0.1", wifi, Wireless.PHONE_AA_PORT), frames[1].second)
         assertArrayEquals(Wireless.infoResponse(wifi), frames[2].second)
     }
 
@@ -44,19 +44,19 @@ class WirelessTest {
         val car = ByteArrayOutputStream()
         var invite: (() -> Unit)? = null
         try {
-            Wireless.handshake(ByteArrayInputStream(ByteArray(0)), car, "10.0.0.1", { wifi }, onLink = { invite = it }) {}
+            Wireless.handshake(ByteArrayInputStream(ByteArray(0)), car, "10.0.0.1", { wifi }, Wireless.PHONE_AA_PORT, onLink = { invite = it }) {}
         } catch (_: EOFException) { /* phone stream ended */ }
         car.reset()
         invite!!()  // e.g. 10 s after the phone's Wi-Fi dropped
         val out = car.toByteArray()
         assertEquals(Wireless.START_REQUEST, out[3].toInt())
-        assertArrayEquals(Wireless.startRequest("10.0.0.1", wifi), out.copyOfRange(4, out.size))
+        assertArrayEquals(Wireless.startRequest("10.0.0.1", wifi, Wireless.PHONE_AA_PORT), out.copyOfRange(4, out.size))
     }
 
     @Test fun versionRequestCarriesEndpointInField6() {
-        val endpoint = byteArrayOf(0x0a, 8) + "10.0.0.1".toByteArray() + byteArrayOf(0x10, 0xa8.toByte(), 0x29)
+        val endpoint = byteArrayOf(0x0a, 8) + "10.0.0.1".toByteArray() + byteArrayOf(0x10, 0xa0.toByte(), 0x29)  // 5280
         val expected = byteArrayOf(0x08, 4, 0x10, 1, 0x32, endpoint.size.toByte()) + endpoint
-        assertArrayEquals(expected, Wireless.versionRequest("10.0.0.1"))
+        assertArrayEquals(expected, Wireless.versionRequest("10.0.0.1", Wireless.PHONE_AA_PORT))
     }
 
     @Test fun readsNegativeStatus() {
@@ -72,7 +72,7 @@ class WirelessTest {
         assert(5955 in c && 7115 in c)                    // 6 GHz 1 and 233
         assert(c.toSet().size == c.size)
         // the start request must still fit in one frame (u16 length)
-        assert(Wireless.startRequest("127.0.0.1", Wireless.Wifi("MyTruck", "x", "02:1a:2b:3c:4d:5e")).size < 65535)
+        assert(Wireless.startRequest("127.0.0.1", Wireless.Wifi("MyTruck", "x", "02:1a:2b:3c:4d:5e"), Wireless.PHONE_AA_PORT).size < 65535)
     }
 }
 
@@ -117,5 +117,19 @@ class WifiCheckTest {
         assert("Turn on Location" in line) { line }
         org.junit.Assert.assertNull(Wireless.checkSetup("", phone).first)  // older phone app: hangs up with nothing
         org.junit.Assert.assertNull(Wireless.checkSetup(null, phone).first)
+    }
+
+    @org.junit.Test fun bssidGetsAColonEveryTwoCharacters() {
+        org.junit.Assert.assertEquals("02", Wireless.colonize("02"))
+        org.junit.Assert.assertEquals("02:1a", Wireless.colonize("021A"))
+        org.junit.Assert.assertEquals("02:1a:2b:3c:4d:5e", Wireless.colonize("021a2b3c4d5e"))
+        org.junit.Assert.assertEquals("02:1a:2b:3c:4d:5e", Wireless.colonize("02:1a:2b:3c:4d:5e"))  // already formatted: unchanged
+        org.junit.Assert.assertEquals("02:1a:2b:3c:4d:5e", Wireless.colonize("02-1a-2b-3c-4d-5e-ff"))  // junk and a 13th byte dropped
+        org.junit.Assert.assertEquals("02:1", Wireless.colonize("02:1"))  // deleting back over a colon works
+    }
+
+    @org.junit.Test fun bssidCursorStaysAfterTheSameCharacters() {
+        // "02:1a:2b": the cursor after 0, 2, 3 and 6 typed characters
+        org.junit.Assert.assertEquals(listOf(0, 2, 4, 8), listOf(0, 2, 3, 6).map(Wireless::cursorAfter))
     }
 }

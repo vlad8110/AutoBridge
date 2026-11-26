@@ -6,9 +6,9 @@ import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.StyleSpan
 
-/** Renders the connection steps like a Linux boot/bash console (Catppuccin Mocha colours). */
+/** Renders the connection steps like a Linux boot/bash console (Catppuccin Mocha text colours on black). */
 object Console {
-    val BACKGROUND = 0xFF1e1e2e.toInt()
+    val BACKGROUND = 0xFF000000.toInt()  // black, like the rest of AutoBridge (was Catppuccin navy)
     private val TEXT = 0xFFcdd6f4.toInt()
     private val GREEN = 0xFFa6e3a1.toInt()
     private val YELLOW = 0xFFf9e2af.toInt()
@@ -23,7 +23,7 @@ object Console {
     fun kind(line: String): Kind {
         val l = line.lowercase()
         return when {
-            listOf("disconnected", "error", "couldn't", "not found", "is off", "needs", "must", "took the speakers").any { it in l } -> Kind.FAIL
+            listOf("disconnected", "error", "couldn't", "can't", "failed", "not sent", "not found", "is off", "needs", "must", "took the speakers").any { it in l } -> Kind.FAIL
             listOf("waiting", "looking", "first,", "set the").any { it in l } -> Kind.WAIT
             listOf("connected", "found", "sent", "saved", "reply", "status 0", "status: 0").any { it in l } -> Kind.OK
             else -> Kind.INFO

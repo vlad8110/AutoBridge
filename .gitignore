@@ -8,3 +8,4 @@ native/deps-src/
 native/build-deps.log
 .DS_Store
 build*.log
+local-builds/

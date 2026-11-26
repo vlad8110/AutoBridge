@@ -19,12 +19,12 @@ import android.service.media.MediaBrowserService
  * replaced session leaves it frozen on an old song (SierraLink's finding).
  */
 object NowPlaying {
-    // Android Auto's key codes (same as Android's): play/pause, next, previous, play, pause.
-    private const val PLAY_PAUSE = 85; private const val NEXT = 87; private const val PREVIOUS = 88
+    // Android Auto's key codes (same as Android's): next, previous, play, pause.
+    private const val NEXT = 87; private const val PREVIOUS = 88
     private const val PLAY = 126; private const val PAUSE = 127
 
     private var session: MediaSession? = null
-    private val meta = MediaMetadata.Builder()
+    private var meta = MediaMetadata.Builder()
     private var state = PlaybackState.STATE_NONE
     private var positionSec = 0
 
@@ -44,6 +44,7 @@ object NowPlaying {
     /** Phone connected: claim the truck's media source right away, as OCBM does, before FM can. */
     @Synchronized fun connected(context: Context) {
         val s = session(context)
+        meta = MediaMetadata.Builder()  // nothing from the last drive (artist, cover) on the dashboard
         meta.putString(MediaMetadata.METADATA_KEY_TITLE, "Android Auto").putString(MediaMetadata.METADATA_KEY_DISPLAY_TITLE, "Android Auto")
         s.setMetadata(meta.build())
         state = PlaybackState.STATE_BUFFERING

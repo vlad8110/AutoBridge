@@ -19,8 +19,6 @@ data class WifiDetails(val ssid: String, val bssid: String, val frequencyMhz: In
     /** False for what Android reports when it hides the network (Location off, or the app in the background). */
     val usable get() = ssid != "<unknown ssid>" && bssid.isNotEmpty() && bssid != "02:00:00:00:00:00"
 
-    fun asText() = "Network (SSID): $ssid\nBSSID: $bssid\nChannel: $channel ($band, $frequencyMhz MHz)"
-
     companion object {
         /** The hotspot password the owner typed in, per network name (Android never lets apps read saved ones). */
         fun password(context: android.content.Context, ssid: String): String? =
@@ -36,8 +34,7 @@ data class WifiDetails(val ssid: String, val bssid: String, val frequencyMhz: In
             val problem = when {
                 !located -> "allow Location for AutoBridge Phone, so it can read the hotspot name"
                 // The truck reached us over its hotspot, so we are on Wi-Fi; null means Android hid it and we never saw it.
-                d == null -> "open AutoBridge Phone on the phone for a few seconds, so it can read the hotspot name"
-                d.ssid == "<unknown ssid>" || d.bssid.isEmpty() || d.bssid == "02:00:00:00:00:00" -> "open AutoBridge Phone on the phone for a few seconds, so it can read the hotspot name"
+                d == null || !d.usable -> "open AutoBridge Phone on the phone for a few seconds, so it can read the hotspot name"
                 password == null -> "tap Password in AutoBridge Phone and type the ${d.ssid} password"
                 else -> null
             }

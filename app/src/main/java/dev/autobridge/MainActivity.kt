@@ -3,7 +3,6 @@ package dev.autobridge
 import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -15,6 +14,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.text.InputType
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.PixelCopy
@@ -27,6 +27,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import java.io.ByteArrayOutputStream
+import kotlin.math.roundToInt
 
 /** Full-screen Android Auto projection, with a status panel while no phone is connected. */
 class MainActivity : Activity(), SurfaceHolder.Callback {
@@ -58,11 +59,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         status = TextView(this).apply { textSize = 20f; typeface = Typeface.MONOSPACE; setLineSpacing(8f, 1f) }
         settingsPanel = SettingsPanel(this, editWifi = ::editWifi, toast = ::show, onShapeChanged = ::shapeChanged, onExit = ::exitApp)
         val settings = TextView(this).apply {
-            text = "Settings"; textSize = 18f; setTextColor(0xFF8AB4F8.toInt()); gravity = Gravity.CENTER; setPadding(56, 28, 56, 28)
-            background = TruckBar.chamfer(Console.BACKGROUND, 0xFF8AB4F8.toInt(), 18f)  // the truck's own button, not a system one
+            text = "Settings"; textSize = 18f; setTextColor(WHITE); gravity = Gravity.CENTER; setPadding(56, 28, 56, 40)
+            Lamp.style(this, resources.displayMetrics.widthPixels / 2012f, 18f)  // the 0.8 button: black, white text, red lamp
             setOnClickListener { settingsPanel.open() }
         }
-        // The truck's data in a smoky-glass strip under Android Auto (always shown).
+        // The truck's data in a black strip under Android Auto (always shown).
         truckBar = TruckBar(this).apply { onSettings = { settingsPanel.open() } }
         panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -104,7 +105,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         truckBar.show(BridgeService.latestTruck)
         BridgeService.instance?.fullForeground()
         ClusterNav.resumed(this)
-        BridgeService.onVideoActive = { active -> panel.visibility = if (active) View.GONE else View.VISIBLE; if (!active) applyBar(); fitSurface() }
+        BridgeService.onVideoActive = { active -> panel.visibility = if (active) View.GONE else View.VISIBLE; if (!active) applyBar(); fitSurface(); settingsPanel.refresh() }
         show(BridgeService.status)
         if (Settings(this).wifi() == null) show("Waiting for Wi-Fi details: open AutoBridge Phone on the truck hotspot, or set them in Wi-Fi settings.")
         panel.visibility = if (BridgeService.instance?.video != null) View.GONE else View.VISIBLE
@@ -125,7 +126,6 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         super.onPause()
     }
 
-    /** Shows or hides the bar per the setting; only between connections, so Android Auto's shape stays right. */
     /** Shows or hides the truck's status bar per the setting (a swipe from the top still shows it for a moment). */
     private fun applyStatusBar() {
         val c = window.insetsController ?: return
@@ -136,6 +136,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         }
     }
 
+    /** Shows or hides the bar per the setting; only between connections, so Android Auto's shape stays right. */
     private fun applyBar() { truckBar.visibility = if (Settings(this).barEnabled) View.VISIBLE else View.GONE }
 
     /** A setting changed Android Auto's shape. It only measures the screen when it connects, so with a phone
@@ -151,13 +152,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         getSystemService(android.app.ActivityManager::class.java).appTasks.forEach { runCatching { it.finishAndRemoveTask() } }
     }
 
+    override fun onDestroy() { wifiDialog?.dismiss(); super.onDestroy() }  // no leaked window when the app closes
+
     @Deprecated("Back gesture; this app has no AndroidX")
     override fun onBackPressed() { if (!settingsPanel.close()) super.onBackPressed() }
 
-    /**
-     * The video comes from PixelCopy (a SurfaceView isn't in the normal drawing), then every other
-     * view is drawn over it. Drawing the SurfaceView itself would clear the video, so it's skipped.
-     */
     /**
      * The whole screen as a PNG: whatever is showing (Android Auto, the truck bar, settings, EQ). The video is
      * on its own layer that View.draw can't see; drawing the SurfaceView leaves its area transparent, so the
@@ -231,39 +230,99 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     // ---- setup ----
 
-    private var wifiDialog: AlertDialog? = null
+    private var wifiDialog: android.app.Dialog? = null
 
+    /** The hotspot details, in big type so they can be checked while typing. Parked only. */
     private fun editWifi() {
         // Typing isn't allowed while driving; unknown driving state counts as driving.
         if (BridgeService.instance?.moving != false) return show("Park the truck to edit the hotspot details.")
         val s = Settings(this)
-        fun field(hint: String, value: String, password: Boolean = false) = EditText(this).apply {
-            this.hint = hint; setText(value); textSize = 20f
-            if (password) inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        val k = resources.displayMetrics.widthPixels / 2012f
+        fun px(v: Int) = (v * k).roundToInt()
+        fun field(value: String) = EditText(this).apply {
+            setText(value); setTextSize(TypedValue.COMPLEX_UNIT_PX, 58 * k); setTextColor(WHITE)
+            setSingleLine(); letterSpacing = 0.04f; backgroundTintList = android.content.res.ColorStateList.valueOf(OUTLINE)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
         }
-        val ssid = field("Hotspot name (SSID)", s.ssid)
-        val pass = field("Hotspot password", s.password, password = true)
-        val bssid = field("Hotspot BSSID, e.g. 02:1a:2b:3c:4d:5e", s.bssid)
+        fun label(t: String) = TruckDialog.text(this, k, 30f, MUTED).apply { text = t }
+        val ssid = field(s.ssid)
+        val pass = field(s.password).apply { inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD }
+        val bssid = field(s.bssid)
+        val hint = TruckDialog.text(this, k, 28f, MUTED)
+        val tip = "Just the numbers and letters, no colons. The truck adds them for you."
+        hint.text = tip
+        // Editing any field clears a warning from the last Save.
+        val clear = object : android.text.TextWatcher {
+            override fun beforeTextChanged(t: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(t: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(e: android.text.Editable) { if (hint.text != tip) { hint.text = tip; hint.setTextColor(MUTED) } }
+        }
+        listOf(ssid, pass, bssid).forEach { it.addTextChangedListener(clear) }
+        // A colon goes in after every 2 characters, so only the 12 numbers and letters are typed.
+        bssid.addTextChangedListener(object : android.text.TextWatcher {
+            private var busy = false
+            override fun beforeTextChanged(t: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun onTextChanged(t: CharSequence?, a: Int, b: Int, c: Int) {}
+            override fun afterTextChanged(e: android.text.Editable) {
+                if (busy) return
+                val f = Wireless.colonize(e.toString())
+                if (f == e.toString()) return
+                // Keep the cursor after the same number of characters, so a fix mid-way doesn't jump to the end.
+                val typed = e.subSequence(0, bssid.selectionEnd.coerceIn(0, e.length)).count { Wireless.colonize(it.toString()).isNotEmpty() }
+                busy = true; e.replace(0, e.length, f); busy = false
+                bssid.setSelection(Wireless.cursorAfter(typed).coerceAtMost(f.length))
+            }
+        })
+        // The eye shows the password, to check it matches the truck's hotspot exactly.
+        val eye = EyeView(this).apply {
+            contentDescription = "Show password"; setPadding(px(30), px(22), px(30), px(34))
+            Lamp.style(this, k, px(16).toFloat(), momentary = false)
+            setOnClickListener {
+                open = !open
+                pass.inputType = InputType.TYPE_CLASS_TEXT or if (open) InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD else InputType.TYPE_TEXT_VARIATION_PASSWORD
+                pass.setSelection(pass.text.length); contentDescription = if (open) "Hide password" else "Show password"; Lamp.lit(this, open)
+            }
+        }
         val form = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL; setPadding(48, 24, 48, 0)
-            addView(ssid); addView(pass); addView(bssid)
+            orientation = LinearLayout.VERTICAL
+            addView(label("Hotspot name (SSID)"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(44) }); addView(ssid)
+            addView(label("Hotspot password"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(36) })
+            addView(LinearLayout(context).apply {
+                gravity = Gravity.CENTER_VERTICAL
+                addView(pass, LinearLayout.LayoutParams(0, -2, 1f))
+                addView(eye, LinearLayout.LayoutParams(px(130), px(100)).apply { marginStart = px(20) })
+            })
+            addView(label("Hotspot BSSID"), LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(36) }); addView(bssid)
+            addView(hint, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(10) })
         }
-        AlertDialog.Builder(this).setTitle("Car Wi-Fi hotspot").setView(form)
-            .setPositiveButton("Save") { _, _ ->
-                val mac = bssid.text.toString().trim()
-                if (!Regex("([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}").matches(mac)) {
-                    show("BSSID must look like 02:1a:2b:3c:4d:5e"); return@setPositiveButton
+        fun problem(text: String): Boolean { hint.text = "⚠ $text"; hint.setTextColor(WHITE); return false }
+        wifiDialog = TruckDialog.show(this, "Car Wi-Fi hotspot", "Type these exactly as the truck's hotspot settings show them.", form, ok = "Save") {
+            val mac = bssid.text.toString().trim()
+            when {
+                ssid.text.isBlank() -> problem("Enter the hotspot name.")
+                pass.text.length !in 8..63 -> problem("A hotspot password is 8 to 63 characters.")
+                !Wireless.MAC.matches(mac) ->
+                    problem("${12 - mac.count { it != ':' }} more to go: a BSSID has 12 numbers and letters.")
+                else -> {
+                    s.ssid = ssid.text.toString(); s.password = pass.text.toString(); s.bssid = mac
+                    show("Saved. Waiting for phone…"); settingsPanel.refresh(); true
                 }
-                if (ssid.text.isBlank()) { show("Enter the hotspot name"); return@setPositiveButton }
-                if (pass.text.length !in 8..63) { show("A hotspot password is 8 to 63 characters"); return@setPositiveButton }
-                s.ssid = ssid.text.toString(); s.password = pass.text.toString(); s.bssid = mac
-                show("Saved. Waiting for phone…")
             }
-            .setNeutralButton("Forget") { _, _ ->
-                s.forget()
-                show("Wi-Fi details forgotten. Set them here, or open AutoBridge Phone on the hotspot to send them.")
-            }
-            .setNegativeButton("Cancel", null).show().also { wifiDialog = it }
+        }
+    }
+
+    /** An eye: open shows the password, crossed out hides it. */
+    private class EyeView(c: android.content.Context) : View(c) {
+        var open = false
+            set(v) { field = v; invalidate() }
+        private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { style = android.graphics.Paint.Style.STROKE; color = WHITE; strokeCap = android.graphics.Paint.Cap.ROUND }
+        override fun onDraw(c: Canvas) {
+            val l = paddingLeft.toFloat(); val t = paddingTop.toFloat(); val w = width - paddingLeft - paddingRight; val h = height - paddingTop - paddingBottom
+            p.strokeWidth = w / 14f
+            c.drawOval(l, t + h * 0.2f, l + w, t + h * 0.8f, p)
+            c.drawCircle(l + w / 2f, t + h / 2f, h * 0.17f, p)
+            if (!open) c.drawLine(l + w * 0.1f, t, l + w * 0.9f, t + h.toFloat(), p)
+        }
     }
 
     private fun askPermissionsThenStart() {

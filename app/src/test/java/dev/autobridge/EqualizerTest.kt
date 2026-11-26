@@ -73,4 +73,23 @@ class EqualizerTest {
         assertEquals(5, loudest)  // the 1 kHz band
         assertTrue(eq.levels[0] < eq.levels[5] - 0.2f)  // 32 Hz stays far lower
     }
+
+    @Test fun airShelfLiftsTheTopEndAndLeavesTheMids() {
+        val up = { f: Double -> Equalizer().apply { gains = FloatArray(10).also { it[9] = 6f } }.let { eq ->
+            val pcm = sine(f, 4000.0); val before = rms(pcm); eq.process(pcm); db(rms(pcm), before) } }
+        // Measured after the automatic preamp (-6 dB here), so the lift shows as the gap between 16 kHz and 1 kHz.
+        assertEquals(6.0, up(16_000.0) - up(1000.0), 1.0)
+        assertEquals(0.0, up(1000.0) - up(250.0), 0.3)
+    }
+
+    @Test fun limiterEasesPeaksInsteadOfClipping() {
+        assertEquals(1000, Equalizer.softClip(1000.0))  // untouched below -1 dBFS
+        assertEquals(-29000, Equalizer.softClip(-29000.0))
+        val hot = listOf(30000.0, 40000.0, 100000.0).map(Equalizer::softClip)
+        assertTrue(hot == hot.sorted() && hot.all { it <= 32767 } && hot[0] < 30000)  // rising, never past full scale
+    }
+
+    @Test fun presetsStayGentle() {
+        assertTrue(Equalizer.PRESETS.all { (_, g) -> g.size == 10 && g.all { it <= 6f } })
+    }
 }

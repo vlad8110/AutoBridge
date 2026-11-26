@@ -130,12 +130,13 @@ native/build-deps.sh
 - Car app: `app/build/outputs/apk/debug/app-debug.apk`. Most cars only install apps from Google
   Play, so you'll usually publish your build to your own Play Console internal-testing track.
 - Phone app: `phone/build/outputs/apk/debug/phone-debug.apk`; install it on the phone directly.
+  Or download the newest build, always at the same link: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
 Signed release builds read the key from environment variables, so no secret lives in the repo:
 
 ```bash
 AB_KEYSTORE=/path/upload.jks AB_KEYSTORE_PASSWORD=... \
-  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=53 -PversionName=0.7.4
+  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=54 -PversionName=0.8.0
 ```
 
 Tests: `./gradlew :app:testDebugUnitTest :phone:testDebugUnitTest`.

@@ -133,9 +133,13 @@ class VideoDecoder(private val mime: String, private val width: Int, private val
  * and held: giving it back lets the car switch to its own source. AAOS mixes by usage.
  */
 class AudioOut(private val audio: AudioManager, private val onFocusLost: () -> Unit) {
+    companion object {
+        /** Android Auto's music stream rate (the settings page shows it). */
+        const val MUSIC_HZ = 48000
+    }
     private class Stream(val rate: Int, val stereo: Boolean, val usage: Int, val music: Boolean)
     private val streams = arrayOf(
-        Stream(48000, true, AudioAttributes.USAGE_MEDIA, true),
+        Stream(MUSIC_HZ, true, AudioAttributes.USAGE_MEDIA, true),
         Stream(16000, false, AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE, false),
         Stream(16000, false, AudioAttributes.USAGE_ASSISTANCE_SONIFICATION, false),
     )
@@ -266,6 +270,7 @@ class Mic(private val send: (ByteArray, Int) -> Unit) {
             val buf = ByteArray(640)
             while (!Thread.currentThread().isInterrupted) {
                 val n = rec.read(buf, 0, buf.size)
+                if (n < 0) { Log.w(TAG, "mic read failed: $n"); break }  // e.g. the audio server restarted: don't spin
                 if (n > 0) send(buf, n)
             }
             rec.stop(); rec.release()

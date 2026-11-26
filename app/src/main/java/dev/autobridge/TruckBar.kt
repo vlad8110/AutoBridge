@@ -103,7 +103,6 @@ class TruckBar(context: Context) : FrameLayout(context) {
     private val barH = (resources.displayMetrics.heightPixels * 0.14f).roundToInt() - 15  // everything inside scales from this
     /** The charge door icon is also the hidden door to AutoBridge settings. */
     var onSettings: (() -> Unit)? = null
-    private lateinit var card: LinearLayout
     private val big = barH * 0.25f
     private val unit = barH * 0.1f
     private val small = barH * 0.085f
@@ -111,15 +110,15 @@ class TruckBar(context: Context) : FrameLayout(context) {
 
     private val gearIcon = GearIcon(context)
     private val range = text(big, WHITE, true)
-    private val energy = text(small, MUTED)
+    private val energy = text(small, WHITE)
     private val mid = text(big, WHITE, true)
-    private val midLabel = text(small * 1.1f, MUTED)
-    private val meterLeft = text(small * 1.1f, MUTED)
-    private val meterCenter = text(small * 1.1f, MUTED)
-    private val meterRight = text(small * 1.1f, MUTED)
+    private val midLabel = text(small * 1.1f, WHITE)
+    private val meterLeft = text(small * 1.1f, WHITE)
+    private val meterCenter = text(small * 1.1f, WHITE)
+    private val meterRight = text(small * 1.1f, WHITE)
     private val meter = Meter(context)
     private val power = text(big * 0.85f, WHITE, true)
-    private val caption = text(small * 1.1f, MUTED)
+    private val caption = text(small * 1.1f, WHITE)
     private val portIcon = PortIcon(context)
     private val batteryIcon = BatteryIcon(context)
 
@@ -127,13 +126,12 @@ class TruckBar(context: Context) : FrameLayout(context) {
         setBackgroundColor(BLACK)
         val icon = (barH * 0.7f).roundToInt()
         val row = LinearLayout(context).apply {
-            card = this
             gravity = Gravity.CENTER_VERTICAL
             setPadding(pad * 2, pad / 2, pad * 2, pad / 2)
             background = Chamfer(BLACK, OUTLINE, barH * 0.13f)
             addView(gearIcon, LinearLayout.LayoutParams(icon, icon))
             gap()
-            addView(column(Gravity.START, range, text(small * 1.1f, MUTED).apply { text = "Range" }, energy))
+            addView(column(Gravity.START, range, text(small * 1.1f, WHITE).apply { text = "Range" }, energy))
             gap()
             addView(column(Gravity.CENTER, mid, midLabel))
             gap()
@@ -157,22 +155,21 @@ class TruckBar(context: Context) : FrameLayout(context) {
     }
 
     fun show(t: Truck) {
-        val b = BarText.of(t, java.util.Locale.getDefault().country in setOf("US", "GB", "LR", "MM"))
+        val b = BarText.of(t, Truck.localeMiles())
         gearIcon.set(b.gear, b.gearWord, b.brakeOn)
-        card.background = Chamfer(BLACK, if (b.charging) GREEN else OUTLINE, barH * 0.13f)
         range.text = withUnit(b.range, b.rangeUnit); energy.text = b.energy
         mid.text = withUnit(b.mid, b.midUnit); midLabel.text = b.midLabel
         meterLeft.text = b.meterLeft; meterCenter.text = b.meterCenter; meterRight.text = b.meterRight
         meter.from = b.meterFrom; meter.to = b.meterTo; meter.mark = b.meterMark
         meter.fill = if (b.meterTone == BarText.Tone.BAD) RED else GREEN; meter.invalidate()
-        power.text = withUnit(b.power, "kW").apply {
+        power.text = withUnit(b.power, "kW", whiteUnit = false).apply {  // "11 kW" takes the power colour
             if (b.timeLeft.isNotEmpty()) {
                 append("   "); val s = length; append(b.timeLeft)
                 setSpan(AbsoluteSizeSpan((big * 0.62f).roundToInt()), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                setSpan(ForegroundColorSpan(GREEN), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(ForegroundColorSpan(WHITE), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)  // only the kW is coloured
                 val l = length; append(" ${b.timeLabel}")
                 setSpan(AbsoluteSizeSpan(unit.roundToInt()), l, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-                setSpan(ForegroundColorSpan(LIGHT), l, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(ForegroundColorSpan(WHITE), l, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
         }
         power.setTextColor(tone(b.powerTone)); caption.text = b.caption
@@ -182,11 +179,11 @@ class TruckBar(context: Context) : FrameLayout(context) {
 
     // ---- building blocks ----
 
-    private fun withUnit(v: String, u: String) = SpannableStringBuilder(v).apply {
+    private fun withUnit(v: String, u: String, whiteUnit: Boolean = true) = SpannableStringBuilder(v).apply {
         if (v != "—" && u.isNotEmpty()) {
             val s = length; append(" $u")
             setSpan(AbsoluteSizeSpan(unit.roundToInt()), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-            setSpan(ForegroundColorSpan(LIGHT), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            if (whiteUnit) setSpan(ForegroundColorSpan(WHITE), s, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
     }
 
@@ -208,23 +205,6 @@ class TruckBar(context: Context) : FrameLayout(context) {
         addView(c, if (c is TextView) LinearLayout.LayoutParams(-2, -2) else LinearLayout.LayoutParams(0, 0))  // a bare View would take the whole row
         addView(r, LinearLayout.LayoutParams(0, -2, 1f))
         (r as? TextView)?.gravity = Gravity.END
-    }
-
-    /** GM's button shape: square, top-right corner cut on a diagonal, thin outline. */
-    private class Chamfer(private val fill: Int, private val stroke: Int, private val cut: Float) : android.graphics.drawable.Drawable() {
-        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
-        override fun draw(c: Canvas) {
-            val b = bounds; val w = 2f; val h = w / 2
-            val path = android.graphics.Path().apply {
-                moveTo(b.left + h, b.top + h); lineTo(b.right - cut, b.top + h); lineTo(b.right - h, b.top + cut)
-                lineTo(b.right - h, b.bottom - h); lineTo(b.left + h, b.bottom - h); close()
-            }
-            p.style = Paint.Style.FILL; p.color = fill; c.drawPath(path, p)
-            p.style = Paint.Style.STROKE; p.strokeWidth = w; p.color = stroke; c.drawPath(path, p)
-        }
-        override fun setAlpha(alpha: Int) {}
-        override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
-        @Deprecated("Drawable API") override fun getOpacity() = android.graphics.PixelFormat.TRANSLUCENT
     }
 
     private fun LinearLayout.gap() = addView(View(context), LinearLayout.LayoutParams(pad * 3, 1))
@@ -254,10 +234,10 @@ class TruckBar(context: Context) : FrameLayout(context) {
         }
         /** The black GM tile: gray outline, top-right corner cut. */
         protected fun tile(c: Canvas) {
-            val path = android.graphics.Path().apply { moveTo(3f, 3f); lineTo(281f, 3f); lineTo(317f, 39f); lineTo(317f, 317f); lineTo(3f, 317f); close() }
-            c.drawPath(path, fill(BLACK)); c.drawPath(path, line(OUTLINE, 3f))
+            c.drawPath(TILE, fill(BLACK)); c.drawPath(TILE, line(OUTLINE, 3f))
         }
-        protected fun rr(c: Canvas, l: Float, t: Float, r: Float, b: Float, rad: Float, paint: Paint) = c.drawRoundRect(RectF(l, t, r, b), rad, rad, paint)
+        private val box = RectF()  // reused: the charge door redraws ~16 times a second for hours
+        protected fun rr(c: Canvas, l: Float, t: Float, r: Float, b: Float, rad: Float, paint: Paint) { box.set(l, t, r, b); c.drawRoundRect(box, rad, rad, paint) }
     }
 
     /** Big gear letter with a P R N D L ring; red brackets close around it while the parking brake is on. */
@@ -320,7 +300,7 @@ class TruckBar(context: Context) : FrameLayout(context) {
                 rr(c, -11f, -6f, 11f, 8f, 4f, p); c.drawRect(-7f, -14f, -4f, -6f, p); c.drawRect(4f, -14f, 7f, -6f, p); c.drawRect(-1.5f, 8f, 1.5f, 17f, p)
                 c.restore()
             } else {
-                val door = android.graphics.Path().apply { moveTo(68f, 58f); lineTo(26f, 76f); quadTo(18f, 79f, 18f, 88f); lineTo(18f, 176f); quadTo(18f, 185f, 26f, 188f); lineTo(68f, 206f); close() }
+                val door = DOOR
                 c.drawPath(door, fill(0xFF1C1D1F.toInt())); c.drawPath(door, line(OUTLINE, 3f))
                 rr(c, 80f, 54f, 272f, 210f, 26f, fill(0xFF161718.toInt()))
                 rr(c, 236f, 106f, 258f, 150f, 6f, fill(0xFF0D0D0D.toInt())); rr(c, 236f, 106f, 258f, 150f, 6f, line(EDGE, 2f))
@@ -328,19 +308,17 @@ class TruckBar(context: Context) : FrameLayout(context) {
                 rr(c, 132f, 56f, 220f, 208f, 44f, fill(0xFF0A0A0A.toInt()))
                 rr(c, 141f, 64f, 211f, 200f, 35f, line(color, 5f))
                 if (!plugged) {
-                    c.drawPath(android.graphics.Path().apply { moveTo(166f, 80f); lineTo(186f, 80f); lineTo(182f, 92f); lineTo(170f, 92f); close() }, fill(0xFF26272A.toInt()))
+                    c.drawPath(SOCKET_TOP, fill(0xFF26272A.toInt()))
                     c.drawCircle(176f, 112f, 22f, fill(0xFF101010.toInt())); c.drawCircle(176f, 112f, 22f, line(DIM, 2.5f))
                     fill(EDGE); c.drawCircle(168f, 105f, 4.5f, p); c.drawCircle(184f, 105f, 4.5f, p); c.drawCircle(176f, 122f, 4.5f, p); c.drawCircle(167f, 118f, 2.2f, p); c.drawCircle(185f, 118f, 2.2f, p)
                     rr(c, 152f, 144f, 200f, 186f, 10f, fill(0xFF1C1D1F.toInt())); rr(c, 152f, 144f, 200f, 186f, 10f, line(EDGE, 2f))
                     rr(c, 163f, 160f, 189f, 169f, 3f, fill(0xFF0A0A0A.toInt()))
                 } else {
-                    val cable = android.graphics.Path().apply { moveTo(190f, 196f); cubicTo(214f, 214f, 236f, 226f, 252f, 248f) }
+                    val cable = CABLE
                     c.drawPath(cable, line(0xFF2A2B2E.toInt(), 16f)); c.drawPath(cable, line((color and 0xFFFFFF) or 0x99000000.toInt(), 3f))
                     rr(c, 148f, 76f, 204f, 200f, 28f, fill(0xFF26272A.toInt())); rr(c, 148f, 76f, 204f, 200f, 28f, line(color, 3f))
                     rr(c, 162f, 88f, 190f, 96f, 4f, fill((color and 0xFFFFFF) or 0x59000000))
-                    if (state == CHARGING) c.drawPath(android.graphics.Path().apply {
-                        moveTo(182f, 112f); lineTo(160f, 146f); lineTo(176f, 146f); lineTo(170f, 174f); lineTo(194f, 136f); lineTo(178f, 136f); close()
-                    }, fill(color))
+                    if (state == CHARGING) c.drawPath(BOLT, fill(color))
                 }
             }
             word(c, WORDS[state], 292f, 38f, WHITE)
@@ -371,11 +349,14 @@ class TruckBar(context: Context) : FrameLayout(context) {
     }
 
     companion object {
+        // The icons' fixed shapes, on their 320-unit square: built once, not on every frame.
+        private val TILE = android.graphics.Path().apply { moveTo(3f, 3f); lineTo(281f, 3f); lineTo(317f, 39f); lineTo(317f, 317f); lineTo(3f, 317f); close() }
+        private val DOOR = android.graphics.Path().apply { moveTo(68f, 58f); lineTo(26f, 76f); quadTo(18f, 79f, 18f, 88f); lineTo(18f, 176f); quadTo(18f, 185f, 26f, 188f); lineTo(68f, 206f); close() }
+        private val SOCKET_TOP = android.graphics.Path().apply { moveTo(166f, 80f); lineTo(186f, 80f); lineTo(182f, 92f); lineTo(170f, 92f); close() }
+        private val CABLE = android.graphics.Path().apply { moveTo(190f, 196f); cubicTo(214f, 214f, 236f, 226f, 252f, 248f) }
+        private val BOLT = android.graphics.Path().apply { moveTo(182f, 112f); lineTo(160f, 146f); lineTo(176f, 146f); lineTo(170f, 174f); lineTo(194f, 136f); lineTo(178f, 136f); close() }
         /** The truck's button shape, for other screens (SettingsPanel). */
         fun chamfer(fill: Int, stroke: Int, cut: Float): android.graphics.drawable.Drawable = Chamfer(fill, stroke, cut)
-        private const val WHITE = 0xFFF1F3F4.toInt()
-        private const val LIGHT = 0xFFBDC1C6.toInt()
-        private const val MUTED = 0xFF9AA0A6.toInt()
         private const val GREEN = 0xFF81C995.toInt()
         private const val RED = 0xFFF28B82.toInt()
         private const val BLUE = 0xFF8AB4F8.toInt()
@@ -385,7 +366,5 @@ class TruckBar(context: Context) : FrameLayout(context) {
         private const val BRAKE = 0xFFFF857D.toInt()
         private const val DIM = 0xFF5F6368.toInt()
         private const val EDGE = 0xFF3C4043.toInt()
-        private const val BLACK = 0xFF000000.toInt()
-        private const val OUTLINE = 0xFF8E939B.toInt()   // the truck's button outline gray
     }
 }
