@@ -22,7 +22,6 @@ import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -58,7 +57,11 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         // The waiting screen looks like a Linux console: monospace, coloured status tags, blinking cursor.
         status = TextView(this).apply { textSize = 20f; typeface = Typeface.MONOSPACE; setLineSpacing(8f, 1f) }
         settingsPanel = SettingsPanel(this, editWifi = ::editWifi, toast = ::show, onShapeChanged = ::shapeChanged, onExit = ::exitApp)
-        val settings = Button(this).apply { text = "Settings"; textSize = 18f; typeface = Typeface.MONOSPACE; setOnClickListener { settingsPanel.open() } }
+        val settings = TextView(this).apply {
+            text = "Settings"; textSize = 18f; setTextColor(0xFF8AB4F8.toInt()); gravity = Gravity.CENTER; setPadding(56, 28, 56, 28)
+            background = TruckBar.chamfer(Console.BACKGROUND, 0xFF8AB4F8.toInt(), 18f)  // the truck's own button, not a system one
+            setOnClickListener { settingsPanel.open() }
+        }
         // The truck's data in a smoky-glass strip under Android Auto (always shown).
         truckBar = TruckBar(this).apply { onSettings = { settingsPanel.open() } }
         panel = LinearLayout(this).apply {

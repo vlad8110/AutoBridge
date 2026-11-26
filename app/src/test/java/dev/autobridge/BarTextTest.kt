@@ -14,7 +14,7 @@ class BarTextTest {
         assertEquals("P", b.gear); assertEquals("Park", b.gearWord)
         assertEquals("382", b.range); assertEquals("mi", b.rangeUnit); assertEquals("164 / 207 kWh", b.energy)
         assertEquals("—", b.mid); assertEquals("Speed", b.midLabel)  // speed stays in the middle while charging
-        assertEquals("15 min", b.timeLeft); assertEquals("to 80%", b.timeLabel)  // the time left sits next to the kW
+        assertEquals("15 min", b.timeLeft); assertEquals("left", b.timeLabel)  // the time left sits next to the kW
         assertEquals("8", b.power); assertEquals("Limit 80%", b.meterRight); assertEquals("80 A max", b.caption)
         assertEquals(0.8f, b.meterMark, 1e-6f)
         assertEquals(BarText.Port.PLUGGED, b.port)

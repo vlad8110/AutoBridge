@@ -36,7 +36,11 @@ object ClusterNav {
     @Volatile var route = Route(); private set
     /** The bound cluster session; null until the Templates Host binds us. Main thread. */
     var sink: ((Route) -> Unit)? = null
-        set(v) { field = v; Log.i(TAG, "cluster: session ${if (v == null) "unbound" else "bound"}"); v?.invoke(route) }
+        set(v) {
+            field = v; Log.i(TAG, "cluster: session ${if (v == null) "unbound" else "bound"}"); v?.invoke(route)
+            // Dropped during a route (seen at a Bluetooth reconnect): no new route start would rebind it, so do it now.
+            if (v == null && route.showable) main.postDelayed({ if (sink == null) front?.get()?.let { bootstrap(it, "lost mid-route") } }, 2000)
+        }
     private val main by lazy { Handler(Looper.getMainLooper()) }  // lazy: keeps the mapping functions unit-testable
     private val deliver = Runnable { sink?.invoke(route) }
     private var front: WeakReference<Activity>? = null

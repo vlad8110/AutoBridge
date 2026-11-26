@@ -63,8 +63,8 @@ object BarText {
         )
         return if (t.charging) common.copy(
             timeLeft = t.chargeSec?.let(::duration) ?: "",
-            timeLabel = t.chargeLimit?.let { "to ${it.roundToInt()}%" } ?: "left",
-            meterLeft = "Charging", meterRight = t.chargeLimit?.let { "Limit ${it.roundToInt()}%" } ?: "",
+            timeLabel = "left",  // the limit is already on the meter's right ("Limit 80%")
+            meterLeft = "", meterRight = t.chargeLimit?.let { "Limit ${it.roundToInt()}%" } ?: "",
             meterFrom = 0f, meterTo = (pct ?: 0) / 100f, meterMark = t.chargeLimit?.let { it / 100f } ?: -1f,
             power = kw?.let { number(abs(it)) } ?: NONE, powerTone = Tone.GOOD,
             caption = t.currentA?.let { "${it.roundToInt()} A max" } ?: "",
@@ -152,7 +152,7 @@ class TruckBar(context: Context) : FrameLayout(context) {
             gap()
             addView(batteryIcon, LinearLayout.LayoutParams(icon, icon))
         }
-        addView(row, LayoutParams(-1, -1).apply { setMargins(pad * 2, pad, pad * 2, pad + pad / 2) })
+        addView(row, LayoutParams(-1, -1).apply { setMargins(pad * 4 / 5, pad, pad * 4 / 5, pad + pad / 2) })  // lines up with Android Auto's card edges
         layoutParams = LinearLayout.LayoutParams(-1, barH)
     }
 

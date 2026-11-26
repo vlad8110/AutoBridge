@@ -3,6 +3,12 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test; the phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page.
 
+## 0.7.3 (truck app only)
+- Turn-by-turn on the dashboard comes back by itself if the truck drops it during navigation (seen when the phone's Bluetooth reconnects).
+- Truck bar: says each thing once ("1 h 45 min left", limit on the meter, Charging under the port) and lines up with Android Auto's edges.
+- The battery card shrinks when plugged in but not charging.
+- The waiting screen's Settings button matches the truck's style.
+
 ## 0.7.2
 - New look for the phone app, matching the truck: black panels with the cut corner, the connection status first in big type (Connected / Waiting / Add the hotspot password), log buttons next, hotspot details last. Plain-word activity list.
 - Settings: the status label (Plugged in, Charging) no longer spills out of its box; long phone names are cut with "…"; the battery is no longer shown twice; charging-only details hide when not charging; Forget asks first; buttons in normal case; one green everywhere.

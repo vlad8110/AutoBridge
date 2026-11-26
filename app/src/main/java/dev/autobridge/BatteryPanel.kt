@@ -72,6 +72,7 @@ class BatteryPanel(c: Context, private val k: Float) : View(c) {
     fun show(t: Truck) {
         info = BatteryInfo.of(t, Locale.getDefault().country in setOf("US", "GB", "LR", "MM"), LocalTime.now())
         contentDescription = "Battery ${info.percent ?: "unknown"} percent, ${info.state.label.lowercase()}, range ${info.range} ${info.rangeUnit}"
+        if (height != (height() * k).roundToInt()) requestLayout()  // one row of details when not charging, two while charging
         invalidate()
     }
 
@@ -152,7 +153,9 @@ class BatteryPanel(c: Context, private val k: Float) : View(c) {
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) =
-        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), (H * k).roundToInt())
+        setMeasuredDimension(MeasureSpec.getSize(widthMeasureSpec), (height() * k).roundToInt())
+
+    private fun height() = if (info.state == BatteryInfo.State.CHARGING) H else H - 96f
 
     private fun fill(color: Int) { p.style = Paint.Style.FILL; p.color = color; p.shader = null }
     private fun line(color: Int, w: Float) { p.style = Paint.Style.STROKE; p.color = color; p.strokeWidth = w; p.shader = null }
