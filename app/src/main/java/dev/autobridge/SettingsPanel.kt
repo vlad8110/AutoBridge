@@ -37,7 +37,9 @@ class SettingsPanel(
     private val k = resources.displayMetrics.widthPixels / 2012f
 
     private val phone = fact()
-    private val version = sysValue(); private val picture = sysValue(); private val sound = sysValue(); private val aaState = sysValue()
+    private val version = sysValue(); private val picture = sysValue(); private val sound = sysValue()
+    /** Typed once into AutoBridge Phone: proves to each side it's talking to the other, not someone else on the hotspot. */
+    private val pairing = sysValue().apply { typeface = Typeface.MONOSPACE; text = s.pairCode }
     private lateinit var eqButton: View
     private lateinit var aaGlyph: GlyphView
     private val hotspot = text(30f).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
@@ -60,7 +62,7 @@ class SettingsPanel(
             background = TruckBar.chamfer(BLACK, OUTLINE, px(44).toFloat())
             addView(text(26f, MUTED).apply { text = "AUTOBRIDGE"; letterSpacing = 0.25f })
             addView(ImageView(context).apply { setImageResource(R.drawable.sierra_truck); adjustViewBounds = true },
-                LinearLayout.LayoutParams(px(620), -2).apply { topMargin = px(16) })
+                LinearLayout.LayoutParams(px(440), -2).apply { topMargin = px(16) })
             addView(text(76f, light = true).apply {
                 text = SpannableStringBuilder("SIERRA EV").apply { setSpan(android.text.style.TypefaceSpan(Fonts.of(context, Fonts.BOLD)), 0, 6, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
                 letterSpacing = 0.26f
@@ -70,7 +72,7 @@ class SettingsPanel(
                 eqButton = bigButton(Glyph.EQ, "Equalizer", momentary = false) { openEqPage() }
                 addView(eqButton, LinearLayout.LayoutParams(0, px(250), 1f))
                 addView(bigButton(Glyph.AA, "Android Auto") { close() }, LinearLayout.LayoutParams(0, px(250), 1f).apply { marginStart = px(22) })
-            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(50) })
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(30) })
             addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
             // Below: the phone, the hotspot it joins (set once, so kept quiet), then system details only needed when something isn't working.
             addView(phone, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(24) })
@@ -82,17 +84,17 @@ class SettingsPanel(
                     val service = BridgeService.instance ?: return@small toast("AutoBridge isn't running")
                     toast("Checking the hotspot details with your phone…")
                     service.testWifi { toast(it); refresh() }
-                }, LinearLayout.LayoutParams(-2, px(72)))
-                addView(small("Edit") { editWifi() }, LinearLayout.LayoutParams(-2, px(72)).apply { marginStart = px(16) })
-                addView(small("Forget") { confirmForget() }, LinearLayout.LayoutParams(-2, px(72)).apply { marginStart = px(16) })
+                }, LinearLayout.LayoutParams(-2, px(96)))
+                addView(small("Edit") { editWifi() }, LinearLayout.LayoutParams(-2, px(96)).apply { marginStart = px(16) })
+                addView(small("Forget") { confirmForget() }, LinearLayout.LayoutParams(-2, px(96)).apply { marginStart = px(16) })
                 // Not a hotspot action: set apart, and named for what it does (stops AutoBridge until it's opened again).
                 addView(small("Force close") { onExit() }.apply { contentDescription = "Force close AutoBridge and Android Auto until you open it again" },
-                    LinearLayout.LayoutParams(-2, px(72)).apply { marginStart = px(40) })
+                    LinearLayout.LayoutParams(-2, px(96)).apply { marginStart = px(40) })
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(14) })
             addView(View(context).apply { setBackgroundColor(0xFF2A2D31.toInt()) }, LinearLayout.LayoutParams(-1, px(2)).apply { topMargin = px(18) })
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
-                for ((key, value) in listOf("Version" to version, "Picture" to picture, "Sound" to sound, "Android Auto" to aaState)) {
+                for ((key, value) in listOf("Version" to version, "Picture" to picture, "Sound" to sound, "Pairing code" to pairing)) {
                     addView(LinearLayout(context).apply {
                         addView(text(22f, MUTED).apply { text = key }, LinearLayout.LayoutParams(px(190), -2))
                         addView(value, LinearLayout.LayoutParams(0, -2, 1f))
@@ -185,7 +187,7 @@ class SettingsPanel(
             (if (w != null && h != null) " · ${Display.layout(w, h, dpi)}" else "")
         hotspot.text = s.ssid.ifEmpty { "Not set" }
         hotspotDetail.text = if (s.bssid.isEmpty()) "Open AutoBridge Phone, or Edit" else "${s.bssid} · password ${if (s.password.isEmpty()) "missing" else "saved"}"
-        voiceDetail.text = VoiceAssistant.status(context).removePrefix("Voice button: ").replaceFirstChar { it.uppercase() }
+        voiceDetail.text = if (VoiceAssistant.held(context)) "Google, through the phone" else "Truck assistant"  // the whole status didn't fit
         version.text = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull() ?: "—"
         val service = BridgeService.instance
         val video = service?.video
@@ -193,7 +195,6 @@ class SettingsPanel(
         picture.text = video?.let { "${it.codecH}p, ${if (service.hevc) "H.265" else "H.264"}" } ?: "Not connected"
         val eqWord = "EQ ${if (Equalizer.music.enabled) "on" else "off"}"
         sound.text = if (video != null) "${AudioOut.MUSIC_HZ / 1000} kHz stereo, $eqWord" else eqWord  // no rate with nothing playing
-        aaState.text = if (video != null) "Running" else "Not connected"
         Lamp.lit(eqButton, Equalizer.music.enabled)  // lit while the EQ is on
         aaGlyph.running = video != null  // Android Auto blue while it runs, grey when not
         aaGlyph.invalidate(); (aaGlyph.parent as View).contentDescription = "Android Auto, ${if (video != null) "running" else "not connected"}"

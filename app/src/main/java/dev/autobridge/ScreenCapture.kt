@@ -15,8 +15,9 @@ import android.util.Log
 
 /**
  * The whole truck screen (status bar and GM's climate bar too) through Android's screen capture, after the owner
- * taps Start once. One capture session lasts until AutoBridge closes; between shots its display has no surface, so it
- * costs nothing. If the truck refuses or the owner taps Cancel, screenshots stay AutoBridge-only for this run.
+ * taps Start. A capture session ends [IDLE_MS] after the last shot, so Android's "screen is being shared" icon doesn't
+ * stay up all drive; the next screenshot in Park asks again. Between shots its display has no surface, so it costs
+ * nothing. If the truck refuses or the owner taps Cancel, screenshots stay AutoBridge-only for this run.
  */
 object ScreenCapture {
     private var projection: MediaProjection? = null
@@ -25,6 +26,8 @@ object ScreenCapture {
     private val main = Handler(Looper.getMainLooper())
     /** Asked and refused (or the truck can't): don't ask again until AutoBridge restarts. */
     @Volatile var declined = false
+    private const val IDLE_MS = 10 * 60_000L
+    private val idle = Runnable { Log.i(TAG, "full-screen capture: no screenshot for 10 min, ending it"); stop() }
 
     val ready get() = display != null
 
@@ -48,7 +51,11 @@ object ScreenCapture {
         val d = display; val r = reader
         if (d == null || r == null) return done(null)
         var finished = false
-        fun end(b: Bitmap?) { if (finished) return; finished = true; r.setOnImageAvailableListener(null, null); d.surface = null; done(b) }
+        fun end(b: Bitmap?) {
+            if (finished) return; finished = true; r.setOnImageAvailableListener(null, null); d.surface = null
+            main.removeCallbacks(idle); main.postDelayed(idle, IDLE_MS)
+            done(b)
+        }
         r.setOnImageAvailableListener({ ir ->
             val img = runCatching { ir.acquireLatestImage() }.getOrNull() ?: return@setOnImageAvailableListener
             val bmp = runCatching {
@@ -65,6 +72,7 @@ object ScreenCapture {
     }
 
     fun stop() {
+        main.removeCallbacks(idle)
         runCatching { display?.release() }; runCatching { reader?.close() }; runCatching { projection?.stop() }
         display = null; reader = null; projection = null
         // Once the capture ends, asking for the mediaProjection type again is refused, and that refusal would also drop
