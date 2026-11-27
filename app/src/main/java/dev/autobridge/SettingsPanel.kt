@@ -144,6 +144,9 @@ class SettingsPanel(
 
     fun open() { shapeAtOpen = shape(); visibility = VISIBLE; refresh(); showTruck(BridgeService.latestTruck) }
 
+    /** Straight to the equalizer (press and hold on the floating gear); its gear and Android Auto buttons work as usual. */
+    fun openEq() { open(); eqPanel.open() }
+
     /** The settings that change Android Auto's shape; a tile tapped on and back off changes nothing. */
     private fun shape() = listOf<Any>(s.barEnabled, s.statusBarShown, s.hevcEnabled, s.aaDpi, s.aaHidden)
     private var shapeAtOpen = emptyList<Any>()

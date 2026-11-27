@@ -78,7 +78,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             setBackgroundColor(Color.BLACK)
             addView(surface, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             addView(panel, FrameLayout.LayoutParams(-1, -1))
-            dot = SettingsDot(context, resources.displayMetrics.widthPixels / 2012f) { settingsPanel.open() }
+            dot = SettingsDot(context, resources.displayMetrics.widthPixels / 2012f, onOpen = { settingsPanel.open() }, onHold = { settingsPanel.openEq() })
             addView(dot)
             addOnLayoutChangeListener { _, l, t, r, b, _, _, _, _ ->
                 if (settled()) Settings(context).apply { viewW = r - l; viewH = b - t }  // used for the next session

@@ -33,6 +33,8 @@ object BarText {
         val meterTone: Tone, val power: String, val powerTone: Tone, val caption: String,
         val brakeOn: Boolean, val port: Port,
         val percent: String,
+        val showSpeed: Boolean = true,  // only out of Park (also when the gear is unknown)
+        val showPort: Boolean = true,   // only while the port is open, plugged in or charging
     )
 
     private const val NONE = "—"
@@ -60,6 +62,8 @@ object BarText {
                 t.portOpen == false || t.portConnected == false -> Port.CLOSED; else -> Port.HIDDEN
             },
             percent = pct?.toString() ?: NONE,
+            showSpeed = gear != "P",
+            showPort = t.charging || t.portOpen == true || t.portConnected == true,
         )
         return if (t.charging) common.copy(
             timeLeft = t.chargeSec?.let(::duration) ?: "",
@@ -121,6 +125,8 @@ class TruckBar(context: Context) : FrameLayout(context) {
     private val caption = text(small * 1.1f, WHITE)
     private val portIcon = PortIcon(context)
     private val batteryIcon = BatteryIcon(context)
+    private val speedBox = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
+    private val portBox = LinearLayout(context).apply { gravity = Gravity.CENTER_VERTICAL }
 
     init {
         setBackgroundColor(BLACK)
@@ -132,8 +138,8 @@ class TruckBar(context: Context) : FrameLayout(context) {
             addView(gearIcon, LinearLayout.LayoutParams(icon, icon))
             gap()
             addView(column(Gravity.START, range, text(small * 1.1f, WHITE).apply { text = "Range" }, energy))
-            gap()
-            addView(column(Gravity.CENTER, mid, midLabel))
+            // Speed only while driving and the port only while it's open: when hidden, the meter takes their room.
+            addView(speedBox.apply { gap(); addView(column(Gravity.CENTER, mid, midLabel)) })
             gap()
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -145,8 +151,10 @@ class TruckBar(context: Context) : FrameLayout(context) {
                     addView(caption, LinearLayout.LayoutParams(-2, -2))
                 })
             }, LinearLayout.LayoutParams(0, -2, 1f))
-            gap()
-            addView(portIcon.apply { setOnClickListener { onSettings?.invoke() } }, LinearLayout.LayoutParams(icon, icon))  // no ripple or hint: only the owner knows
+            addView(portBox.apply {
+                gap()
+                addView(portIcon.apply { setOnClickListener { onSettings?.invoke() } }, LinearLayout.LayoutParams(icon, icon))  // no ripple or hint: only the owner knows
+            })
             gap()
             addView(batteryIcon, LinearLayout.LayoutParams(icon, icon))
         }
@@ -175,6 +183,8 @@ class TruckBar(context: Context) : FrameLayout(context) {
         power.setTextColor(tone(b.powerTone)); caption.text = b.caption
         portIcon.set(if (b.charging && b.port == BarText.Port.PLUGGED) PortIcon.CHARGING else b.port.ordinal)
         batteryIcon.set(b.percent.toIntOrNull())
+        speedBox.visibility = if (b.showSpeed) View.VISIBLE else View.GONE
+        portBox.visibility = if (b.showPort) View.VISIBLE else View.GONE
     }
 
     // ---- building blocks ----

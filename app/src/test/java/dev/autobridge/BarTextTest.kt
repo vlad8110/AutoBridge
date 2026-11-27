@@ -11,6 +11,7 @@ class BarTextTest {
 
     @Test fun chargingMatchesTheTruck() {
         val b = BarText.of(charging, localeMiles = true)
+        assertEquals(true, b.showPort)  // charging: the port shows
         assertEquals("P", b.gear); assertEquals("Park", b.gearWord)
         assertEquals("382", b.range); assertEquals("mi", b.rangeUnit); assertEquals("164 / 207 kWh", b.energy)
         assertEquals("—", b.mid); assertEquals("Speed", b.midLabel)  // speed stays in the middle while charging
@@ -36,6 +37,10 @@ class BarTextTest {
         assertEquals(0.5f - kotlin.math.sqrt(24f / 200f) / 2, b.meterFrom, 1e-5f); assertEquals(0.5f, b.meterTo, 1e-6f)  // square-root scale, left of centre
         assertEquals("Partial regen", b.caption)
         assertEquals(BarText.Port.CLOSED, b.port)  // shown as Closed, not hidden
+        assertEquals(true, b.showSpeed); assertEquals(false, b.showPort)  // driving, port shut: speed shows, port box hides
+        val parked = BarText.of(t.copy(gear = 0x4, speedMs = 0f), true)
+        assertEquals(false, parked.showSpeed); assertEquals(false, parked.showPort)  // parked, port shut: the meter gets the room
+        assertEquals(true, BarText.of(t.copy(portOpen = true), true).showPort)  // port opened, not plugged in yet
         val drawing = BarText.of(t.copy(rateMw = 62_400_000f), true)
         assertEquals("62", drawing.power); assertEquals(BarText.Tone.BAD, drawing.powerTone); assertEquals(0.5f, drawing.meterFrom, 1e-6f)
     }

@@ -14,7 +14,7 @@ import kotlin.math.roundToInt
  * stays put when the bars change Android Auto's size). Its touches never reach Android Auto.
  */
 @SuppressLint("ViewConstructor")
-class SettingsDot(c: Context, k: Float, private val onOpen: () -> Unit) : FrameLayout(c) {
+class SettingsDot(c: Context, k: Float, private val onOpen: () -> Unit, private val onHold: () -> Unit) : FrameLayout(c) {
     private val prefs = c.getSharedPreferences("autobridge", Context.MODE_PRIVATE)
     private val size = (112 * k).roundToInt()
     private val slop = ViewConfiguration.get(c).scaledTouchSlop
@@ -41,21 +41,25 @@ class SettingsDot(c: Context, k: Float, private val onOpen: () -> Unit) : FrameL
     }
 
     private var downX = 0f; private var downY = 0f; private var startX = 0f; private var startY = 0f; private var dragging = false
+    /** Press and hold (without moving) goes straight to the equalizer. */
+    private var held = false
+    private val hold = Runnable { if (!dragging) { held = true; performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS); onHold() } }
 
     @SuppressLint("ClickableViewAccessibility")  // a tap calls performClick below
     override fun onTouchEvent(e: MotionEvent): Boolean {
         val p = parent as? android.view.View ?: return true
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; startX = x; startY = y; dragging = false; alpha = 1f }
+            MotionEvent.ACTION_DOWN -> { downX = e.rawX; downY = e.rawY; startX = x; startY = y; dragging = false; held = false; alpha = 1f; postDelayed(hold, ViewConfiguration.getLongPressTimeout().toLong()) }
             MotionEvent.ACTION_MOVE -> {
-                if (!dragging && (abs(e.rawX - downX) > slop || abs(e.rawY - downY) > slop)) dragging = true
+                if (!dragging && !held && (abs(e.rawX - downX) > slop || abs(e.rawY - downY) > slop)) { dragging = true; removeCallbacks(hold) }
                 if (dragging) {
                     x = (startX + e.rawX - downX).coerceIn(0f, (p.width - size).toFloat())
                     y = (startY + e.rawY - downY).coerceIn(0f, (p.height - size).toFloat())
                 }
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                alpha = 1f
+                alpha = 1f; removeCallbacks(hold)
+                if (held) return true
                 if (dragging) prefs.edit().putFloat("gearX", x / (p.width - size).coerceAtLeast(1))
                     .putFloat("gearY", y / (p.height - size).coerceAtLeast(1)).apply()
                 else if (e.actionMasked == MotionEvent.ACTION_UP) performClick()
