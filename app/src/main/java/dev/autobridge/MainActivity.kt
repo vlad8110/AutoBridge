@@ -109,7 +109,7 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         BridgeService.onStatus = { show(it) }
         BridgeService.onTruck = { truckBar.show(it); settingsPanel.showTruck(it) }
         BridgeService.capture = ::screenshot
-        BridgeService.onMoving = { moving -> if (moving) wifiDialog?.dismiss() }
+        BridgeService.onMoving = { moving -> if (moving) wifiDialog?.dismiss(); settingsPanel.movingChanged() }
         truckBar.show(BridgeService.latestTruck)
         BridgeService.instance?.fullForeground()
         ClusterNav.resumed(this)

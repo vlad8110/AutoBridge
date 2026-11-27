@@ -166,6 +166,9 @@ class SettingsPanel(
     }
 
     /** True if the page was open (so Back closes it instead of leaving AutoBridge). */
+    /** The truck started or stopped moving: the EQ hides its knobs while driving. */
+    fun movingChanged() = eqPanel.refresh()
+
     /** See [EqPanel.shown]. */
     fun shown(visible: Boolean) = eqPanel.shown(visible && visibility == VISIBLE)
 

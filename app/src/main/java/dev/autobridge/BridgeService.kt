@@ -742,6 +742,7 @@ class Settings(private val context: Context) {
     /** The music EQ (settings page): band gains in dB, on/off, and the preset name ("Custom" once edited). */
     var eqGains: String? get() = p.getString("eqGains", null); set(v) = p.edit().putString("eqGains", v).apply()
     var eqEnabled: Boolean get() = p.getBoolean("eqOn", true); set(v) = p.edit().putBoolean("eqOn", v).apply()
+    var eqAdjust: Boolean get() = p.getBoolean("eqAdjust", true); set(v) = p.edit().putBoolean("eqAdjust", v).apply()
     var eqPreset: String get() = p.getString("eqPreset", "Flat") ?: "Flat"; set(v) = p.edit().putString("eqPreset", v).apply()
     /** The owner's saved EQs (EQ 1..3 on the EQ page), as [Equalizer.encode]; null while empty. */
     fun eqSlot(n: Int): String? = p.getString("eqSlot$n", null)

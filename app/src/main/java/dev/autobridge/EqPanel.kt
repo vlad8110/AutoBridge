@@ -24,6 +24,8 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
     private val bands = EqView(context, k) { g -> eq.gains = g; save(CUSTOM) }
     private val presetViews = mutableMapOf<String, TextView>()
     private val power = text(32f)
+    private val adjust = text(32f)
+    private val hint = text(26f, MUTED)
     private val slots = (1..SLOTS).map { n ->
         Lamp.button(context, k, "Custom $n", 27f, 18f, momentary = false) { load(n) }.apply {
             minWidth = 0; setPadding(0, 0, 0, px(6))
@@ -50,6 +52,12 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                     Lamp.style(this, k, px(20).toFloat(), momentary = false)
                     setOnClickListener { eq.enabled = !eq.enabled; s.eqEnabled = eq.enabled; refresh() }
                 }, LinearLayout.LayoutParams(px(240), px(110)))
+                // Shows or hides the drag knobs and curve in Park; while driving they're always hidden.
+                addView(adjust.apply {
+                    text = "Adjust"; gravity = Gravity.CENTER; letterSpacing = 0.02f; setPadding(0, 0, 0, px(6))
+                    Lamp.style(this, k, px(20).toFloat(), momentary = false)
+                    setOnClickListener { if (!driving()) { s.eqAdjust = !s.eqAdjust; refresh() } }
+                }, LinearLayout.LayoutParams(px(240), px(110)).apply { marginStart = px(22) })
                 addView(Lamp.button(context, k, "Android Auto", 32f) { toAndroidAuto() }, LinearLayout.LayoutParams(px(300), px(110)).apply { marginStart = px(22) })
                 // Back to settings: a gear, last in the row.
                 addView(GearView(context).apply {
@@ -70,9 +78,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
             })
             addView(bands.apply { background = TruckBar.chamfer(BLACK, OUTLINE, px(40).toFloat()) },
                 LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = px(40) })
-            addView(text(26f, MUTED).apply {
-                text = "Drag a band up or down. Changes music only; for the cleanest sound, keep the truck's own Bass, Mid and Treble centered."
-            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(24) })
+            addView(hint, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(24) })
         }
         addView(page, LayoutParams(-1, -1))
     }
@@ -112,7 +118,10 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         for (i in 1..4) postDelayed({ Lamp.lit(button, i % 2 == 0) }, i * 120L)  // blink: off, on, off, on
     }
 
-    private fun refresh() {
+    private fun driving() = BridgeService.instance?.moving != false  // unknown counts as driving
+
+    /** Also called when the truck starts or stops moving. */
+    fun refresh() {
         val current = s.eqPreset
         presetViews.forEach { (name, v) -> Lamp.lit(v, name == current) }
         slots.forEachIndexed { i, b ->
@@ -123,7 +132,14 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         }
         power.text = if (eq.enabled) "EQ on" else "EQ off"
         Lamp.lit(power, eq.enabled)
-        bands.dim = !eq.enabled; bands.invalidate()
+        val shown = s.eqAdjust && !driving()
+        Lamp.lit(adjust, shown); adjust.setTextColor(if (driving()) MUTED else WHITE)
+        hint.text = when {
+            driving() -> "Park the truck to adjust the bands."
+            !shown -> "Tap Adjust to show the bands."
+            else -> "Drag a band up or down. Changes music only; for the cleanest sound, keep the truck's own Bass, Mid and Treble centered."
+        }
+        bands.adjust = shown; bands.dim = !eq.enabled; bands.invalidate()
     }
 
     private fun px(v: Int) = (v * k).roundToInt()
@@ -153,6 +169,8 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         var gains = FloatArray(Equalizer.BANDS.size)
             set(v) { field = v; invalidate() }
         var dim = false
+        /** False: only the lights, no knobs, curve or values, and dragging does nothing. */
+        var adjust = true
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private val top get() = 110f * k
         private val bottom get() = height - 110f * k
@@ -173,6 +191,10 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                 c.drawText(GRID_TEXT[n], left - 24f * k, y(db) + 8f * k, p)
             }
             meter(c)
+            p.style = Paint.Style.FILL; p.color = MUTED; p.textSize = 28f * k; p.textAlign = Paint.Align.CENTER
+            for (i in gains.indices) c.drawText(Equalizer.LABELS[i], x(i), bottom + 64f * k, p)
+            p.textSize = 22f * k; p.textAlign = Paint.Align.RIGHT; c.drawText("Hz", right, bottom + 100f * k, p)
+            if (!adjust) return
             // curve through the knobs
             val path = curve.apply {
                 reset()
@@ -195,10 +217,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                 val g = gains[i]
                 if (valueOf[i] != g) { valueOf[i] = g; valueText[i] = if (g > 0) "+${fmt(g)}" else fmt(g) }
                 c.drawText(valueText[i], x(i), top - 44f * k, p)
-                p.color = MUTED; p.textSize = 28f * k
-                c.drawText(Equalizer.LABELS[i], x(i), bottom + 64f * k, p)
             }
-            p.textSize = 22f * k; p.textAlign = Paint.Align.RIGHT; c.drawText("Hz", right, bottom + 100f * k, p)
         }
 
         /** What each column shows; jumps up with the music and falls back slowly, like a stereo's lights. */
@@ -242,6 +261,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
 
         @SuppressLint("ClickableViewAccessibility")  // a drag surface; each band is also described for TalkBack
         override fun onTouchEvent(e: MotionEvent): Boolean {
+            if (!adjust) return false
             if (e.actionMasked !in setOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_MOVE, MotionEvent.ACTION_UP)) return true
             val i = (((e.x - left) / (right - left)) * gains.size).toInt().coerceIn(0, gains.size - 1)
             val db = (Equalizer.MAX_DB - (e.y - top) / (bottom - top) * 2 * Equalizer.MAX_DB).coerceIn(-Equalizer.MAX_DB, Equalizer.MAX_DB)
