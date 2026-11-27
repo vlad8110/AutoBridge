@@ -84,6 +84,9 @@ class SettingsPanel(
                 }, LinearLayout.LayoutParams(-2, px(72)))
                 addView(small("Edit") { editWifi() }, LinearLayout.LayoutParams(-2, px(72)).apply { marginStart = px(16) })
                 addView(small("Forget") { confirmForget() }, LinearLayout.LayoutParams(-2, px(72)).apply { marginStart = px(16) })
+                // Not a hotspot action: set apart, and named for what it does (stops AutoBridge until it's opened again).
+                addView(small("Force close") { onExit() }.apply { contentDescription = "Force close AutoBridge and Android Auto until you open it again" },
+                    LinearLayout.LayoutParams(-2, px(72)).apply { marginStart = px(40) })
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(14) })
             addView(View(context).apply { setBackgroundColor(0xFF2A2D31.toInt()) }, LinearLayout.LayoutParams(-1, px(2)).apply { topMargin = px(18) })
             addView(LinearLayout(context).apply {
@@ -129,12 +132,6 @@ class SettingsPanel(
                     BridgeService.instance?.sendLogs("settings") ?: toast("AutoBridge isn't running yet")
                 }), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = px(22) })
             })
-            // Exit sits under Send log, away from the way back to Android Auto.
-            addView(LinearLayout(context).apply {
-                addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
-                addView(row(text(40f).apply { text = "Close app" }, text(26f, MUTED).apply { text = "Until you open it again" },
-                    button("Exit") { onExit() }), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = px(22) })
-            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(22) })
         }
         addView(LinearLayout(context).apply {
             setPadding(px(64), px(70), px(64), px(40))

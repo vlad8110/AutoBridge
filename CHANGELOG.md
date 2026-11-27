@@ -3,6 +3,14 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
+## 0.8.6 (November 26, 2026, truck app only)
+- Settings: Display moved up against the battery card, with a bigger heading. Truck bar, Status bar and HD picture are now one "Screen" row of three buttons, like the Android Auto size row.
+- Settings: the truck hotspot moved into the truck card under the phone name, as a quiet set-once setting (name, address, then small Test, Edit and Forget buttons), so the address isn't cut off any more.
+- Exit is now "Force close", next to the hotspot buttons. Each force close is written to the log, so a log shows it was done on purpose.
+- The Android Auto button shows a round Android Auto badge: blue while it runs, grey when not.
+- Button lights are thinner, a little dimmer, and fade at both ends like a curved lens.
+- Battery card: while not charging, power never drops below 1 kW (the truck reports whole kW, so under 1 kW read as 0 and the box disappeared).
+
 ## 0.8.5 (November 26, 2026)
 - Fixed: the battery card on the settings page lost its bottom edge when the truck wasn't charging.
 - Equalizer: Truck, Vocal and Highway presets removed. Three saved curves (Custom 1, 2, 3) at the end of the presets, like the truck's radio favorites: tap to load, press and hold to save the curve you have now. An empty one saves on the first tap.

@@ -173,10 +173,13 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         Restart.now(this)
     }
 
-    /** Exit in settings: stop the phone connection and close every AutoBridge screen (the cluster helper too). */
+    /** Force close in settings: stop the phone connection and close every AutoBridge screen (the cluster helper too). */
     private fun exitApp() {
-        stopService(Intent(this, BridgeService::class.java))
-        getSystemService(android.app.ActivityManager::class.java).appTasks.forEach { runCatching { it.finishAndRemoveTask() } }
+        android.util.Log.i(TAG, "Force close: the owner tapped Force close in Settings")
+        window.decorView.postDelayed({  // a moment for the log capture to save that line
+            stopService(Intent(this, BridgeService::class.java))
+            getSystemService(android.app.ActivityManager::class.java).appTasks.forEach { runCatching { it.finishAndRemoveTask() } }
+        }, 300)
     }
 
     override fun onDestroy() { wifiDialog?.dismiss(); super.onDestroy() }  // no leaked window when the app closes
