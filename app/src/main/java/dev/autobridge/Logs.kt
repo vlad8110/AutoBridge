@@ -70,10 +70,18 @@ object Logs {
         return true
     }
 
-    /** The last [max] lines of the saved log, older file first. */
-    fun saved(d: File, max: Int = 10_000): String =
-        listOf(PREVIOUS, CURRENT).map { File(d, it) }.filter { it.exists() }
-            .flatMap { it.readLines() }.takeLast(max).joinToString("\n")
+    /**
+     * Everything the truck has saved (both files, about 4 MB at most), newest app start first so the drive
+     * that just happened is at the top. Each app start begins with its "==== AutoBridge … started" line.
+     */
+    fun saved(d: File): String {
+        val sessions = mutableListOf(mutableListOf<String>())
+        listOf(PREVIOUS, CURRENT).map { File(d, it) }.filter { it.exists() }.flatMap { it.readLines() }.forEach { l ->
+            if (l.startsWith("==== AutoBridge ") && sessions.last().isNotEmpty()) sessions += mutableListOf<String>()
+            sessions.last() += l
+        }
+        return sessions.asReversed().flatten().joinToString("\n")
+    }
 
     fun collect(context: Context, reason: String, header: List<String>): ByteArray {
         val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }.getOrNull()
@@ -82,7 +90,7 @@ object Logs {
             appendLine("Time: ${Date()}")
             appendLine("Car: ${Build.MANUFACTURER} ${Build.MODEL}, Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
             header.forEach { appendLine(it) }
-            appendLine("---- log (saved on the truck, survives restarts; newest last) ----")
+            appendLine("---- log (saved on the truck, survives restarts; newest app start first, oldest at the bottom) ----")
         }
         val kept = dir?.let { runCatching { saved(it) }.getOrNull() }.orEmpty()
         val log = kept.ifEmpty {

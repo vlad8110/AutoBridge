@@ -20,10 +20,10 @@ class LogFileTest {
         assertEquals("a".repeat(100), File(d, "autobridge.1.log").readText().trim())  // the oldest is gone
     }
 
-    @Test fun savedLogIsOlderFileFirstAndCapped() {
-        File(d, "autobridge.1.log").writeText("1\n2\n")
-        File(d, "autobridge.log").writeText("3\n4\n")
-        assertEquals("1\n2\n3\n4", Logs.saved(d))
-        assertEquals("3\n4", Logs.saved(d, max = 2))
+    @Test fun savedLogIsAllOfItNewestAppStartFirst() {
+        File(d, "autobridge.1.log").writeText("tail of an older start\n==== AutoBridge 0.8.5 started\na\n")
+        File(d, "autobridge.log").writeText("b\n==== AutoBridge 0.8.6 started\nc\n==== log capture restarted\nd\n")
+        assertEquals("==== AutoBridge 0.8.6 started\nc\n==== log capture restarted\nd\n==== AutoBridge 0.8.5 started\na\nb\ntail of an older start",
+            Logs.saved(d))
     }
 }

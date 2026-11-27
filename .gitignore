@@ -9,3 +9,4 @@ native/build-deps.log
 .DS_Store
 build*.log
 local-builds/
+truck-logs/

@@ -3,6 +3,9 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
+## 0.8.7 (in progress, not released)
+- Send log now sends everything the truck has saved (up to about 4 MB, several days of drives) instead of only the newest 10,000 lines, with the newest app start at the top and the oldest at the bottom.
+
 ## 0.8.6 (November 26, 2026, truck app only)
 - Settings: Display moved up against the battery card, with a bigger heading. Truck bar, Status bar and HD picture are now one "Screen" row of three buttons, like the Android Auto size row.
 - Settings: the truck hotspot moved into the truck card under the phone name, as a quiet set-once setting (name, address, then small Test, Edit and Forget buttons), so the address isn't cut off any more.
