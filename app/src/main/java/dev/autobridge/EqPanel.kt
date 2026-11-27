@@ -244,33 +244,32 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
             if (eq.metering) postDelayed(tick, if (idle) 250L else 33L)  // only while the EQ page is open; one pending redraw, never a pile-up
         }
 
-        // The knob: a slim black fader cap with chamfered corners, two grip grooves above and below, and a smoked-red
-        // lamp in a dark slot, brightest in the middle (dimmed when the EQ is off). No line joins the bands.
-        private val capBody = Path(); private val capSlot = RectF(); private var capFor = 0
-        private val capFill = Paint(Paint.ANTI_ALIAS_FLAG); private val lampFill = Paint(Paint.ANTI_ALIAS_FLAG)
+        // The knob (design C, "Ribbed"): a black fader cap with fine vertical ribs that catch the light only at their
+        // tops, so it reads as black metal rather than grey, and a short dull red slit in the middle. No line joins the bands.
+        private val capBody = Path(); private var capFor = 0
         private fun cap(c: Canvas, cx: Float, cy: Float) {
-            val w = 119f * k; val h = 32f * k; val cut = 6f * k  // 15% smaller than 0.8.12
-            if (capFor != width) {  // shapes in the cap's own coordinates, made once per size
+            val w = 119f * k; val h = 34f * k; val u = w / 64  // the design is drawn on a 64-wide cap
+            if (capFor != width) {  // the outline in the cap's own coordinates, made once per size
                 capFor = width
+                val cut = h * 0.16f
                 capBody.reset(); capBody.moveTo(-w / 2 + cut, -h / 2); capBody.lineTo(w / 2 - cut, -h / 2); capBody.lineTo(w / 2, -h / 2 + cut)
                 capBody.lineTo(w / 2, h / 2 - cut); capBody.lineTo(w / 2 - cut, h / 2); capBody.lineTo(-w / 2 + cut, h / 2)
                 capBody.lineTo(-w / 2, h / 2 - cut); capBody.lineTo(-w / 2, -h / 2 + cut); capBody.close()
-                capFill.shader = android.graphics.LinearGradient(0f, -h / 2, 0f, h / 2, intArrayOf(0xFF0A0A0A.toInt(), 0xFF000000.toInt(), 0xFF000000.toInt()), floatArrayOf(0f, 0.3f, 1f), android.graphics.Shader.TileMode.CLAMP)
-                capSlot.set(-w * 0.27f, -h * 0.14f, w * 0.27f, h * 0.14f)
-                lampFill.shader = android.graphics.RadialGradient(0f, 0f, w * 0.27f, intArrayOf(0xFF9E4A30.toInt(), 0xFF6A1E16.toInt(), 0xFF42110D.toInt(), 0xFF24070A.toInt(), 0xFF100203.toInt()), floatArrayOf(0f, 0.12f, 0.3f, 0.6f, 1f), android.graphics.Shader.TileMode.CLAMP)
             }
             c.save(); c.translate(cx, cy)
-            c.drawPath(capBody, capFill)
-            // Black, not grey: only a faint edge so the shape reads, and barely-there grip grooves.
-            p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * k; p.color = 0xFF222222.toInt(); c.drawPath(capBody, p)
-            p.strokeWidth = 1.2f * k; p.color = 0xFF151515.toInt()
-            for (gy in floatArrayOf(-0.34f, -0.22f, 0.22f, 0.34f)) c.drawLine(-w / 2 + cut, gy * h, w / 2 - cut, gy * h, p)
-            p.style = Paint.Style.FILL; p.color = 0xFF000000.toInt()
-            c.drawRoundRect(capSlot.left - 2 * k, capSlot.top - 2 * k, capSlot.right + 2 * k, capSlot.bottom + 2 * k, h, h, p)
-            lampFill.alpha = if (dim) 0x55 else 0xFF
-            c.drawRoundRect(capSlot, h, h, lampFill)
-            p.style = Paint.Style.FILL; p.color = if (dim) 0x0CFF7A50 else 0x20FF7A50  // a faint hot spot in the lens; the rest stays dark, like smoked glass
-            c.drawOval(-w * 0.05f, -h * 0.04f, w * 0.05f, h * 0.04f, p)
+            p.style = Paint.Style.FILL; p.color = BLACK; c.drawPath(capBody, p)
+            p.style = Paint.Style.STROKE; p.strokeWidth = 1f * u; p.color = 0xFF262626.toInt(); c.drawPath(capBody, p)
+            p.strokeWidth = 1.2f * u
+            for (i in -7..7) {
+                if (kotlin.math.abs(i) < 3) continue  // room for the slit
+                val rx = i * w / 16
+                p.color = 0xFF1C1C1C.toInt(); c.drawLine(rx, -h * 0.34f, rx, h * 0.34f, p)
+                p.color = 0xFF3C3C3C.toInt(); c.drawLine(rx, -h * 0.34f, rx, -h * 0.22f, p)  // only the rib's top catches the light
+            }
+            p.style = Paint.Style.FILL
+            p.color = 0xFF050000.toInt(); c.drawRoundRect(-w * 0.14f, -h * 0.1f, w * 0.14f, h * 0.1f, h * 0.1f, h * 0.1f, p)
+            p.color = if (dim) 0x666E1A13 else 0xFF6E1A13.toInt()  // dull red; dimmer still while the EQ is off
+            c.drawRoundRect(-w * 0.12f, -h * 0.06f, w * 0.12f, h * 0.06f, h * 0.06f, h * 0.06f, p)
             c.restore()
         }
 
