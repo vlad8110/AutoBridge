@@ -4,6 +4,14 @@ What changed in each AutoBridge version since the project went public (November 
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
 ## 0.8.8 (in progress, not released)
+- **Update both apps.** New pairing code: the truck shows a 12-letter code in Settings (under Sound). Type it once into AutoBridge Phone (Pairing code). From then on the phone and truck recognize each other by the code, not the hotspot password that everyone on the hotspot knows, so another device on the hotspot can't pose as either one. Until the code is typed, the hotspot password works as before.
+- With the code typed in: logs and screenshots travel encrypted over the hotspot, and Settings > Test only trusts hotspot details from your phone.
+- Phone app: a connection to the Android Auto port that waits more than a minute for the truck is dropped, so a stray app can't sit waiting there.
+- Only the truck's own apps (media card, source switcher) can control AutoBridge's music.
+- Full-screen screenshots: the screen capture ends 10 minutes after the last screenshot, so Android's "screen is being shared" icon doesn't stay up all drive. The next screenshot in Park asks again.
+- Settings: Test, Edit, Forget and Force close are as tall as the other buttons, easier to hit. The Voice line reads "Truck assistant" or "Google, through the phone" instead of being cut off. The truck picture is a little smaller and the repeated Android Auto status line is gone, so the card's bottom lines show in full.
+- The charge-port glow in the truck bar breathes at 8 frames a second instead of 16, half the work over a long charge.
+- From last night's audit: the mic and GPS no longer risk stopping after a screenshot session ends; the equalizer redraws 4 times a second instead of 30 while no music plays; the settings page doesn't animate under the open equalizer; the start-after-reboot part listens only to Android; and the screen-capture question never pops up while driving.
 - On a GMC, AutoBridge now uses the truck's own font (GM's GMSUIGMCGlobal, read from the truck; Montserrat elsewhere). The log says which font files it used.
 - Screenshots can take the whole truck screen, status bar and climate bar included: the first screenshot asks on the truck to allow screen capture (tap Start, once per run). Tap Cancel, or a truck that doesn't allow it, and screenshots stay AutoBridge-only as before.
 - Equalizer Custom 1-3: an empty slot is Flat, and tapping it no longer copies the current curve into it (that's how one save could look like it landed in all three). Saving is press and hold only, and now says so: a buzz, a short chime and the slot's light blinking.
