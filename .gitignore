@@ -12,3 +12,4 @@ local-builds/
 truck-logs/
 TODO.md
 audits/
+.kotlin/
