@@ -3,6 +3,9 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
+## 0.8.8 (in progress, not released)
+- The settings gear over Android Auto: no more dark circle behind it, and a new thin outline gear in the same line style as Android Auto's own bar icons (with a soft shadow so it still shows over a light map). It starts lower, in the middle of Android Auto's bottom bar.
+
 ## 0.8.7 (November 26, 2026)
 - The settings gear over Android Auto now starts in the empty part of Android Auto's bottom bar (between the mic and the app icons) instead of over Android Auto's own buttons in the top-right corner. Drag it anywhere; it stays there.
 - Android Auto size: the layout named under the size now matches what the truck shows ("Map on top, two cards" where it used to say "Map and one card").
