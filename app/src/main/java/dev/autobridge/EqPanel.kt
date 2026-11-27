@@ -255,24 +255,24 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                 capBody.reset(); capBody.moveTo(-w / 2 + cut, -h / 2); capBody.lineTo(w / 2 - cut, -h / 2); capBody.lineTo(w / 2, -h / 2 + cut)
                 capBody.lineTo(w / 2, h / 2 - cut); capBody.lineTo(w / 2 - cut, h / 2); capBody.lineTo(-w / 2 + cut, h / 2)
                 capBody.lineTo(-w / 2, h / 2 - cut); capBody.lineTo(-w / 2, -h / 2 + cut); capBody.close()
-                capFill.shader = android.graphics.LinearGradient(0f, -h / 2, 0f, h / 2, intArrayOf(0xFF3A3B3D.toInt(), 0xFF1C1D1F.toInt(), 0xFF111213.toInt()), null, android.graphics.Shader.TileMode.CLAMP)
+                capFill.shader = android.graphics.LinearGradient(0f, -h / 2, 0f, h / 2, intArrayOf(0xFF1C1C1D.toInt(), 0xFF0C0C0D.toInt(), 0xFF050505.toInt()), floatArrayOf(0f, 0.45f, 1f), android.graphics.Shader.TileMode.CLAMP)
                 capSlot.set(-w * 0.27f, -h * 0.14f, w * 0.27f, h * 0.14f)
-                lampFill.shader = android.graphics.RadialGradient(0f, 0f, w * 0.27f, intArrayOf(0xFFE2402E.toInt(), 0xFF8E0F16.toInt(), 0xFF2A0306.toInt()), floatArrayOf(0f, 0.35f, 1f), android.graphics.Shader.TileMode.CLAMP)
+                lampFill.shader = android.graphics.RadialGradient(0f, 0f, w * 0.27f, intArrayOf(0xFFE36C44.toInt(), 0xFF8D281D.toInt(), 0xFF5B1812.toInt(), 0xFF31090A.toInt(), 0xFF160203.toInt()), floatArrayOf(0f, 0.12f, 0.3f, 0.6f, 1f), android.graphics.Shader.TileMode.CLAMP)
             }
             c.save(); c.translate(cx, cy)
             c.drawPath(capBody, capFill)
-            p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * k; p.color = 0xFF5A5C60.toInt(); c.drawPath(capBody, p)  // machined edge
+            p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * k; p.color = 0xFF3C3D40.toInt(); c.drawPath(capBody, p)  // machined edge
             p.strokeWidth = 1.5f * k
             for (gy in floatArrayOf(-0.36f, -0.24f, 0.24f, 0.36f)) {  // grip grooves: dark line with a light lip under it
                 p.color = 0xFF050506.toInt(); c.drawLine(-w / 2 + cut, gy * h, w / 2 - cut, gy * h, p)
-                p.color = 0xFF2E2F32.toInt(); c.drawLine(-w / 2 + cut, gy * h + 1.5f * k, w / 2 - cut, gy * h + 1.5f * k, p)
+                p.color = 0xFF202124.toInt(); c.drawLine(-w / 2 + cut, gy * h + 1.5f * k, w / 2 - cut, gy * h + 1.5f * k, p)
             }
             p.style = Paint.Style.FILL; p.color = 0xFF050506.toInt()
             c.drawRoundRect(capSlot.left - 2 * k, capSlot.top - 2 * k, capSlot.right + 2 * k, capSlot.bottom + 2 * k, h, h, p)
             lampFill.alpha = if (dim) 0x55 else 0xFF
             c.drawRoundRect(capSlot, h, h, lampFill)
-            p.style = Paint.Style.FILL; p.color = if (dim) 0x22FF6A50 else 0x8CFF6A50.toInt()  // the hot spot in the lens
-            c.drawOval(-w * 0.09f, -h * 0.05f, w * 0.09f, h * 0.05f, p)
+            p.style = Paint.Style.FILL; p.color = if (dim) 0x14FF7A50 else 0x40FF7A50  // a small hot spot in the lens; the rest stays dark, like smoked glass
+            c.drawOval(-w * 0.05f, -h * 0.04f, w * 0.05f, h * 0.04f, p)
             c.restore()
         }
 
