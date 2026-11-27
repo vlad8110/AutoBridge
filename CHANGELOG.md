@@ -4,6 +4,8 @@ What changed in each AutoBridge version since the project went public (November 
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
 ## 0.8.7 (in progress, not released)
+- New font: Montserrat, the closest free match to the truck's own wide, round climate-bar font, on the settings, equalizer and dialogs (the truck bar under Android Auto is unchanged). A few labels got shorter to fit: Voice, To the phone, Lit: shown.
+- The log now records the Android Auto size and hidden icons, and lists the fonts installed on the truck.
 - Send log now sends everything the truck has saved (up to about 4 MB, several days of drives) instead of only the newest 10,000 lines, with the newest app start at the top and the oldest at the bottom.
 
 ## 0.8.6 (November 26, 2026, truck app only)

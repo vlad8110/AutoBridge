@@ -419,7 +419,7 @@ class BridgeService : Service() {
         main.removeCallbacks(watchdog); main.postDelayed(watchdog, 2000)
         watchGps()
         Log.i(TAG, "video offered: ${if (plan.hevc) "H.265" else "H.264"} " + plan.configs.joinToString { "${it.codecW}x${it.codecH}" } +
-            " for an area of ${prefs.viewW}x${prefs.viewH} (truck bar ${if (prefs.barEnabled) "on" else "off"}, status bar ${if (prefs.statusBarShown) "on" else "off"})")
+            " for an area of ${prefs.viewW}x${prefs.viewH} (truck bar ${if (prefs.barEnabled) "on" else "off"}, status bar ${if (prefs.statusBarShown) "on" else "off"}), size ${if (prefs.aaDpi > 0) "${prefs.aaDpi}" else "Auto ${Display.dpi(this)}"}, hidden icons ${prefs.aaHidden}")
         pushSensors()
         say("Android Auto connected")
         // Started at boot, nobody has opened the screen yet: try to bring it up for the video.
@@ -515,6 +515,8 @@ class BridgeService : Service() {
                 "Route: ${ClusterNav.route}, cluster ${if (ClusterNav.sink != null) "bound" else "not bound"}",
                 "Status: " + synchronized(this) { recent.joinToString(" | ") },
                 "Car permissions: ${TruckProbe.permissions(this)}",
+                "Android Auto size: ${if (s.aaDpi > 0) "${s.aaDpi}" else "Auto ${Display.dpi(this)}"}, hidden icons ${s.aaHidden} (1 clock, 2 signal, 4 battery)",
+                "Fonts on the truck: ${Fonts.installed()}",
                 "---- truck data (every value the truck lets AutoBridge read) ----",
             ) + (runCatching { (car!!.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager).let { TruckProbe.dump(it) + TruckProbe.hidden(it) } }.getOrElse { listOf("no car service: $it") })
             try {

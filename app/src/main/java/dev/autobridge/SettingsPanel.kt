@@ -61,7 +61,7 @@ class SettingsPanel(
             addView(ImageView(context).apply { setImageResource(R.drawable.sierra_truck); adjustViewBounds = true },
                 LinearLayout.LayoutParams(px(620), -2).apply { topMargin = px(16) })
             addView(text(76f, light = true).apply {
-                text = SpannableStringBuilder("SIERRA EV").apply { setSpan(StyleSpan(Typeface.BOLD), 0, 6, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
+                text = SpannableStringBuilder("SIERRA EV").apply { setSpan(android.text.style.TypefaceSpan(Fonts.of(context, Fonts.BOLD)), 0, 6, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
                 letterSpacing = 0.26f
             }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(28) })
             addView(text(26f, MUTED).apply { text = "WIRELESS ANDROID AUTO"; letterSpacing = 0.25f }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(10) })
@@ -115,7 +115,7 @@ class SettingsPanel(
                 button("−") { setDpi(Display.dpi(context) - DPI_STEP) },
                 button("Auto") { s.aaDpi = 0; shapeChanged = true; refresh() },
                 button("+") { setDpi(Display.dpi(context) + DPI_STEP) }), LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(22) })
-            addView(row(text(40f).apply { text = "Android Auto icons" }, text(26f, MUTED).apply { text = "Lit: shown on Android Auto's bar" },
+            addView(row(text(40f).apply { text = "Android Auto icons" }, text(26f, MUTED).apply { text = "Lit: shown" },
                 *listOf(Settings.HIDE_CLOCK to "Clock", Settings.HIDE_SIGNAL to "Signal", Settings.HIDE_BATTERY to "Battery").map { (bit, label) ->
                     Lamp.button(context, k, label, momentary = false) { s.aaHidden = s.aaHidden xor bit; shapeChanged = true; refresh() }.apply {
                         minWidth = px(150); setPadding(px(26), 0, px(26), px(6))
@@ -125,10 +125,10 @@ class SettingsPanel(
             addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))  // spare height goes here, so Close app ends level with the left card
             header("PHONE")
             addView(LinearLayout(context).apply {
-                addView(row(text(40f).apply { text = "Voice button" }, voiceDetail, button("Change") {
+                addView(row(text(40f).apply { text = "Voice" }, voiceDetail, button("Change") {
                     VoiceAssistant.picker(context)?.let { runCatching { context.startActivity(it) } } ?: toast("This truck has no assistant setting")
                 }), LinearLayout.LayoutParams(0, -2, 1f))
-                addView(row(text(40f).apply { text = "Send log" }, text(26f, MUTED).apply { text = "Saved on the phone" }, button("Send") {
+                addView(row(text(40f).apply { text = "Send log" }, text(26f, MUTED).apply { text = "To the phone" }, button("Send") {
                     BridgeService.instance?.sendLogs("settings") ?: toast("AutoBridge isn't running yet")
                 }), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = px(22) })
             })
@@ -209,7 +209,7 @@ class SettingsPanel(
 
     private fun text(size: Float, color: Int = WHITE, mono: Boolean = false, light: Boolean = false) = TextView(context).apply {
         setTextSize(TypedValue.COMPLEX_UNIT_PX, size * k); setTextColor(color)
-        typeface = when { mono -> Typeface.MONOSPACE; light -> Typeface.create("sans-serif-light", Typeface.NORMAL); else -> Typeface.create("sans-serif", Typeface.NORMAL) }
+        typeface = when { mono -> Typeface.MONOSPACE; light -> Fonts.of(context, Fonts.LIGHT); else -> Fonts.of(context) }
     }
 
     /** One line, cut with "…" so a long phone name can't run into the next column. */

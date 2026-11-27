@@ -153,3 +153,6 @@ Tests: `./gradlew :app:testDebugUnitTest :phone:testDebugUnitTest`.
 GPL-3.0, because it uses [aasdk](https://github.com/opencardev/aasdk) (GPL-3.0). Android Auto is a
 trademark of Google LLC, and GMC and Sierra are trademarks of General Motors. This project is not
 affiliated with or endorsed by Google or General Motors. Use it at your own risk.
+
+The truck app uses the [Montserrat](https://github.com/JulietaUla/Montserrat) font, copyright 2011 The Montserrat Project
+Authors, under the [SIL Open Font License 1.1](https://openfontlicense.org).

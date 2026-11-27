@@ -166,7 +166,7 @@ class BatteryPanel(c: Context, private val k: Float) : View(c) {
     private fun line(color: Int, w: Float) { p.style = Paint.Style.STROKE; p.color = color; p.strokeWidth = w; p.shader = null }
     private fun text(size: Float, bold: Boolean, color: Int = WHITE) {
         fill(color); p.textSize = size; p.textAlign = Paint.Align.LEFT
-        p.typeface = Typeface.create(if (bold) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
+        p.typeface = Fonts.of(context, if (bold) Fonts.MEDIUM else Fonts.REGULAR)
     }
 
     private companion object {

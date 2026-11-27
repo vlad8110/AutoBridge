@@ -122,7 +122,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
 
     private fun text(size: Float, color: Int = WHITE, light: Boolean = false) = TextView(context).apply {
         setTextSize(TypedValue.COMPLEX_UNIT_PX, size * k); setTextColor(color)
-        typeface = Typeface.create(if (light) "sans-serif-light" else "sans-serif", Typeface.NORMAL)
+        typeface = Fonts.of(context, if (light) Fonts.LIGHT else Fonts.REGULAR)
     }
 
     /** A settings gear, white: eight teeth around a ring. */
@@ -198,7 +198,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         private val seg = RectF(); private val halo = RectF()
         private val tick = Runnable { invalidate() }
         // Made once, not 30 times a second: the meter redraws the whole view.
-        private val face = Typeface.create("sans-serif", Typeface.NORMAL)
+        private val face = Fonts.of(context)
         private val curve = Path()
         private val valueText = Array(Equalizer.BANDS.size) { "" }
         private val valueOf = FloatArray(Equalizer.BANDS.size) { Float.NaN }

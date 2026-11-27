@@ -124,7 +124,7 @@ object Lamp {
         TextView(c).apply {
             text = label; gravity = Gravity.CENTER; maxLines = 1; letterSpacing = 0.02f
             setTextSize(TypedValue.COMPLEX_UNIT_PX, size * k); setTextColor(WHITE)
-            typeface = Typeface.create(if (bold) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
+            typeface = Fonts.of(c, if (bold) Fonts.MEDIUM else Fonts.REGULAR)
             minWidth = (200 * k).roundToInt(); setPadding((34 * k).roundToInt(), 0, (34 * k).roundToInt(), (6 * k).roundToInt())
             style(this, k, cut * k, momentary)
             setOnClickListener { onClick() }
@@ -165,6 +165,6 @@ object TruckDialog {
 
     fun text(c: Context, k: Float, size: Float, color: Int = WHITE) = TextView(c).apply {
         setTextSize(TypedValue.COMPLEX_UNIT_PX, size * k); setTextColor(color)
-        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        typeface = Fonts.of(c)
     }
 }
