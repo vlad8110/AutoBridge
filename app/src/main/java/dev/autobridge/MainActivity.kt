@@ -199,7 +199,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private fun screenshot(done: (ByteArray?) -> Unit) {
         // The whole truck screen when the owner has allowed it (asked once per run), else AutoBridge's own picture.
         if (ScreenCapture.ready) return ScreenCapture.grab { b -> if (b != null) png(b, done) else ownScreenshot(done) }
-        if (ScreenCapture.declined) return ownScreenshot(done)
+        // The consent box would pop up over the driver's screen: only ask in Park, and use AutoBridge's own picture meanwhile.
+        if (ScreenCapture.declined || BridgeService.instance?.moving != false) return ownScreenshot(done)
         pendingShot = done
         @Suppress("DEPRECATION")
         runCatching { startActivityForResult(getSystemService(android.media.projection.MediaProjectionManager::class.java).createScreenCaptureIntent(), CAPTURE) }
