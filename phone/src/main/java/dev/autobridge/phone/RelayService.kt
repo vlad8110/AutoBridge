@@ -169,8 +169,21 @@ class RelayService : Service() {
             val name = LogSaver.receive(this, it.getInputStream())
             it.getOutputStream().write('K'.code)  // tells the car it's saved
             say("Saved the car's log: $name")
+            saved(screenshot = name.endsWith(".png"))
         } catch (e: IOException) {
             say("Couldn't save the car's log: ${e.message}")
+        }
+    }
+
+    /** Says "done" without a message: a camera shutter for a screenshot, a short chime for a log, and a double buzz. */
+    private fun saved(screenshot: Boolean) {
+        runCatching {
+            android.media.MediaActionSound().apply {
+                play(if (screenshot) android.media.MediaActionSound.SHUTTER_CLICK else android.media.MediaActionSound.FOCUS_COMPLETE)
+            }
+        }
+        runCatching {
+            getSystemService(android.os.Vibrator::class.java)?.vibrate(android.os.VibrationEffect.createPredefined(android.os.VibrationEffect.EFFECT_DOUBLE_CLICK))
         }
     }
 

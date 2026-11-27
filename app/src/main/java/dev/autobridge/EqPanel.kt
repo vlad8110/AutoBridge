@@ -25,9 +25,9 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
     private val presetViews = mutableMapOf<String, TextView>()
     private val power = text(32f)
     private val slots = (1..SLOTS).map { n ->
-        Lamp.button(context, k, "Custom $n", 27f, 18f, momentary = false) { if (s.eqSlot(n) == null) store(n) else load(n) }.apply {
+        Lamp.button(context, k, "Custom $n", 27f, 18f, momentary = false) { load(n) }.apply {
             minWidth = 0; setPadding(0, 0, 0, px(6))
-            setOnLongClickListener { store(n); true }
+            setOnLongClickListener { store(n, this); true }
         }
     }
 
@@ -94,14 +94,22 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         refresh()
     }
 
+    /** An empty slot is Flat until something is saved into it. */
     private fun load(n: Int) {
-        val g = Equalizer.decode(s.eqSlot(n))
+        val g = s.eqSlot(n)?.let(Equalizer::decode) ?: FloatArray(Equalizer.BANDS.size)
         eq.gains = g; bands.gains = g.copyOf(); save("Custom $n")
     }
 
-    private fun store(n: Int) {
+    /** Press and hold: saves the curve you hear now, and says so with a buzz, a chime and the slot's light blinking. */
+    private fun store(n: Int, button: View) {
         s.setEqSlot(n, Equalizer.encode(eq.gains)); save("Custom $n")
-        android.widget.Toast.makeText(context, "Saved to Custom $n", android.widget.Toast.LENGTH_SHORT).show()
+        button.performHapticFeedback(android.view.HapticFeedbackConstants.CONFIRM)
+        runCatching {  // a short two-note "done"; a busy audio stream just means no chime
+            val tone = android.media.ToneGenerator(android.media.AudioManager.STREAM_NOTIFICATION, 70)
+            tone.startTone(android.media.ToneGenerator.TONE_PROP_ACK, 220)
+            postDelayed({ tone.release() }, 400)
+        }
+        for (i in 1..4) postDelayed({ Lamp.lit(button, i % 2 == 0) }, i * 120L)  // blink: off, on, off, on
     }
 
     private fun refresh() {
@@ -111,7 +119,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
             val n = i + 1; val empty = s.eqSlot(n) == null
             Lamp.lit(b, current == "Custom $n")
             b.setTextColor(if (empty) MUTED else WHITE)
-            b.contentDescription = "Custom $n, " + if (empty) "empty. Tap to save the current curve here." else "saved. Press and hold to save the current curve here instead."
+            b.contentDescription = "Custom $n, " + if (empty) "empty (flat). Press and hold to save the current curve here." else "saved. Press and hold to save the current curve here instead."
         }
         power.text = if (eq.enabled) "EQ on" else "EQ off"
         Lamp.lit(power, eq.enabled)

@@ -4,6 +4,9 @@ What changed in each AutoBridge version since the project went public (November 
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
 ## 0.8.8 (in progress, not released)
+- Equalizer Custom 1-3: an empty slot is Flat, and tapping it no longer copies the current curve into it (that's how one save could look like it landed in all three). Saving is press and hold only, and now says so: a buzz, a short chime and the slot's light blinking.
+- Phone app: when the truck's log or screenshot is saved, you hear a chime (log) or a camera shutter (screenshot) and feel a double buzz, instead of an "Asked the truck" message. A message only shows if the truck isn't connected.
+- Phone app: the Refresh button no longer gets cut off against the hotspot box under it.
 - Press and hold the floating gear to go straight to the equalizer (a tap still opens settings, a drag still moves it).
 - Truck bar: the speed shows only out of Park, and the charge port only while it's open, plugged in or charging. When they're hidden, the regen/power meter stretches into their space. (Tapping the port, the hidden shortcut to settings, works whenever it shows; the floating gear always does.)
 - The settings gear over Android Auto: no more dark circle behind it, and a new thin outline gear in the same line style as Android Auto's own bar icons (with a soft shadow so it still shows over a light map). It starts lower, in the middle of Android Auto's bottom bar.

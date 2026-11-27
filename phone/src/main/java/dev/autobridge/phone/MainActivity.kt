@@ -95,9 +95,9 @@ class MainActivity : Activity() {
 
             addView(section("TRUCK"))
             addView(LinearLayout(context).apply {
-                addView(button("Send log") { ask(RelayService::requestLog, "Asked the truck; the log arrives in a few seconds") },
+                addView(button("Send log") { ask(RelayService::requestLog) },
                     LinearLayout.LayoutParams(0, -2, 1f))
-                addView(button("Screenshot") { ask(RelayService::requestScreenshot, "Asked the truck; the screenshot arrives in a few seconds") },
+                addView(button("Screenshot") { ask(RelayService::requestScreenshot) },
                     LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
             })
             addView(LinearLayout(context).apply {
@@ -107,10 +107,10 @@ class MainActivity : Activity() {
             }, lp(10))
 
             addView(LinearLayout(context).apply {
-                gravity = Gravity.CENTER_VERTICAL
+                gravity = Gravity.BOTTOM  // the button sits on the heading's line, whole, with clear space above the box
                 addView(section("HOTSPOT DETAILS"), LinearLayout.LayoutParams(0, -2, 1f))
-                addView(button("Refresh", small = true) { showWifi() }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(16) })
-            }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(10) })
+                addView(button("Refresh", small = true) { showWifi() }, LinearLayout.LayoutParams(-2, -2))
+            }, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(14) })
             addView(panel(detailsText))
 
             addView(section("RECENT"))
@@ -131,9 +131,9 @@ class MainActivity : Activity() {
         RelayService.start(this)
     }
 
-    private fun ask(request: () -> Boolean, ok: String) = Thread {
-        val sent = request()
-        runOnUiThread { Toast.makeText(this, if (sent) ok else "The truck isn't connected to this phone", Toast.LENGTH_SHORT).show() }
+    /** Success is told when the file is saved (shutter or chime and a buzz, from the relay); only a failure needs words. */
+    private fun ask(request: () -> Boolean) = Thread {
+        if (!request()) runOnUiThread { Toast.makeText(this, "The truck isn't connected to this phone", Toast.LENGTH_SHORT).show() }
     }.start()
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) = showWifi()
