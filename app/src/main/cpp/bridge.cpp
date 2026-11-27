@@ -276,6 +276,15 @@ struct Video : Base, aasdk::channel::mediasink::video::IVideoMediaSinkServiceEve
             v->set_height_margin(t.marginH);
             v->set_density(t.dpi);
             v->set_video_codec_type(codec);
+            // Newer Android Auto ignores the session_configuration bits for signal and battery; it hides the items
+            // the head unit lists as drawing itself: UiConfig field 5 (1 clock, 2 battery level, 3 phone signal).
+            // Our aasdk's UiConfig has no field 5 yet, so it goes in as an unknown field.
+            if (s.hiddenUi) {
+                auto *f = v->mutable_ui_config()->mutable_unknown_fields();
+                if (s.hiddenUi & 1) f->AddVarint(5, 1);
+                if (s.hiddenUi & 4) f->AddVarint(5, 2);
+                if (s.hiddenUi & 2) f->AddVarint(5, 3);
+            }
         }
     }
     void onChannelOpenRequest(const ctl::ChannelOpenRequest &) override { openResponse(s, ch); ch->receive(shared_from_this()); }
