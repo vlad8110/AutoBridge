@@ -127,6 +127,9 @@ class BridgeService : Service() {
         return START_STICKY
     }
 
+    /** Set once the owner allowed full-screen capture: the service must then also run as a mediaProjection one. */
+    @Volatile var projecting = false
+
     /** Media playback and microphone service types; only allowed while AutoBridge's screen is open. */
     fun fullForeground() {
         openScreenOnConnect = false
@@ -134,6 +137,7 @@ class BridgeService : Service() {
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED)
             types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
         if (gpsAllowed()) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+        if (projecting) types = types or ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION  // dropping it would end the capture
         runCatching { startForeground(1, notification(), types) }.onFailure { Log.w(TAG, "foreground upgrade refused", it) }
         locationAllowed = true
         if (handle != 0L) watchGps()
@@ -177,6 +181,7 @@ class BridgeService : Service() {
     }
 
     override fun onDestroy() {
+        ScreenCapture.stop()
         running = false
         stopGps()
         runCatching { btServer?.close() }
@@ -517,6 +522,7 @@ class BridgeService : Service() {
                 "Car permissions: ${TruckProbe.permissions(this)}",
                 "Android Auto size: ${if (s.aaDpi > 0) "${s.aaDpi}" else "Auto ${Display.dpi(this)}"}, hidden icons ${s.aaHidden} (1 clock, 2 signal, 4 battery)",
                 "Fonts on the truck: ${Fonts.installed()}",
+                "GMC font used: ${Fonts.gmFont()}",
                 "---- truck data (every value the truck lets AutoBridge read) ----",
             ) + (runCatching { (car!!.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager).let { TruckProbe.dump(it) + TruckProbe.hidden(it) } }.getOrElse { listOf("no car service: $it") })
             try {

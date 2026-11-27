@@ -4,6 +4,8 @@ What changed in each AutoBridge version since the project went public (November 
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
 ## 0.8.8 (in progress, not released)
+- On a GMC, AutoBridge now uses the truck's own font (GM's GMSUIGMCGlobal, read from the truck; Montserrat elsewhere). The log says which font files it used.
+- Screenshots can take the whole truck screen, status bar and climate bar included: the first screenshot asks on the truck to allow screen capture (tap Start, once per run). Tap Cancel, or a truck that doesn't allow it, and screenshots stay AutoBridge-only as before.
 - Equalizer Custom 1-3: an empty slot is Flat, and tapping it no longer copies the current curve into it (that's how one save could look like it landed in all three). Saving is press and hold only, and now says so: a buzz, a short chime and the slot's light blinking.
 - Phone app: when the truck's log or screenshot is saved, you hear a chime (log) or a camera shutter (screenshot) and feel a double buzz, instead of an "Asked the truck" message. A message only shows if the truck isn't connected.
 - Phone app: the Refresh button no longer gets cut off against the hotspot box under it.

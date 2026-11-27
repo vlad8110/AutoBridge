@@ -4,6 +4,7 @@ import android.Manifest
 import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
+import android.util.Log
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
@@ -30,6 +31,9 @@ import java.io.ByteArrayOutputStream
 import kotlin.math.roundToInt
 
 /** Full-screen Android Auto projection, with a status panel while no phone is connected. */
+/** Request code for the full-screen capture consent. */
+private const val CAPTURE = 7
+
 class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var root: FrameLayout
     /** Everything on screen: Android Auto, the truck bar and the settings pages on top. */
@@ -193,6 +197,34 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
      * video is copied separately and laid in underneath, showing only where nothing covers it.
      */
     private fun screenshot(done: (ByteArray?) -> Unit) {
+        // The whole truck screen when the owner has allowed it (asked once per run), else AutoBridge's own picture.
+        if (ScreenCapture.ready) return ScreenCapture.grab { b -> if (b != null) png(b, done) else ownScreenshot(done) }
+        if (ScreenCapture.declined) return ownScreenshot(done)
+        pendingShot = done
+        @Suppress("DEPRECATION")
+        runCatching { startActivityForResult(getSystemService(android.media.projection.MediaProjectionManager::class.java).createScreenCaptureIntent(), CAPTURE) }
+            .onFailure { Log.w(TAG, "no screen capture on this truck", it); ScreenCapture.declined = true; pendingShot = null; ownScreenshot(done) }
+    }
+
+    private var pendingShot: ((ByteArray?) -> Unit)? = null
+
+    @Deprecated("Activity result API; this app has no AndroidX")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        @Suppress("DEPRECATION") super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode != CAPTURE) return
+        val done = pendingShot ?: return; pendingShot = null
+        val service = BridgeService.instance
+        if (resultCode != RESULT_OK || data == null || service == null) { ScreenCapture.declined = true; Log.i(TAG, "full-screen capture not allowed: AutoBridge-only screenshots"); return ownScreenshot(done) }
+        service.projecting = true; service.fullForeground()  // Android 14: the service must be a mediaProjection one first
+        if (!ScreenCapture.start(this, resultCode, data)) { service.projecting = false; service.fullForeground(); return ownScreenshot(done) }
+        // Let the consent box leave the screen before the shot.
+        window.decorView.postDelayed({ ScreenCapture.grab { b -> if (b != null) png(b, done) else ownScreenshot(done) } }, 700)
+    }
+
+    private fun png(b: Bitmap, done: (ByteArray?) -> Unit) =
+        kotlin.concurrent.thread(name = "ab-shot-png") { done(ByteArrayOutputStream().also { b.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()) }
+
+    private fun ownScreenshot(done: (ByteArray?) -> Unit) {
         if (screen.width == 0) return done(null)
         val shot = Bitmap.createBitmap(screen.width, screen.height, Bitmap.Config.ARGB_8888)
         val c = Canvas(shot)
