@@ -282,12 +282,17 @@ class SettingsPanel(
         override fun onDraw(c: Canvas) {
             val u = width / 48f
             p.strokeCap = Paint.Cap.ROUND; p.strokeJoin = Paint.Join.ROUND
-            if (glyph == Glyph.EQ) {  // three sliders, knobs at different heights
-                p.strokeWidth = 3 * u
+            if (glyph == Glyph.EQ) {  // three tracks, each with a slim fader cap and its small red lamp, at different heights
                 for ((x, y) in listOf(10f to 30f, 24f to 15f, 38f to 25f)) {
-                    p.style = Paint.Style.STROKE; p.color = WHITE; c.drawLine(x * u, 6 * u, x * u, 42 * u, p)
-                    p.style = Paint.Style.FILL; p.color = BLACK; c.drawCircle(x * u, y * u, 5 * u, p)
-                    p.style = Paint.Style.STROKE; p.color = WHITE; c.drawCircle(x * u, y * u, 5 * u, p)
+                    p.style = Paint.Style.STROKE; p.strokeWidth = 2.5f * u; p.color = WHITE; c.drawLine(x * u, 5 * u, x * u, 43 * u, p)
+                    val cap = android.graphics.Path().apply {  // 12 x 5, corners cut
+                        moveTo((x - 5) * u, (y - 2.5f) * u); lineTo((x + 5) * u, (y - 2.5f) * u); lineTo((x + 6) * u, (y - 1.5f) * u)
+                        lineTo((x + 6) * u, (y + 1.5f) * u); lineTo((x + 5) * u, (y + 2.5f) * u); lineTo((x - 5) * u, (y + 2.5f) * u)
+                        lineTo((x - 6) * u, (y + 1.5f) * u); lineTo((x - 6) * u, (y - 1.5f) * u); close()
+                    }
+                    p.style = Paint.Style.FILL; p.color = BLACK; c.drawPath(cap, p)
+                    p.style = Paint.Style.STROKE; p.color = WHITE; c.drawPath(cap, p)
+                    p.strokeWidth = 1.6f * u; p.color = 0xFFE0303A.toInt(); c.drawLine((x - 1.5f) * u, y * u, (x + 1.5f) * u, y * u, p)
                 }
                 return
             }

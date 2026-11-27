@@ -3,6 +3,9 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
+## 0.8.11 (in progress, not released)
+- Equalizer: each band's knob is now a slim black fader cap with a smoked-red lamp, and the line joining the bands is gone. The Equalizer icon (settings page and the equalizer's top row) has matching fader caps. Everything works as before: drag, presets, Custom 1-3, the pencil, hidden while driving.
+
 ## 0.8.10 (November 27, 2026, truck app only)
 - Truck app: hiding Android Auto's Signal or Battery icon no longer breaks Android Auto's layout (in 0.8.9 the picture shifted left and the app dock disappeared). Back to the 0.8.8 way: the clock hides; on some phones, like the Galaxy Z Fold8, the signal and battery icons stay.
 

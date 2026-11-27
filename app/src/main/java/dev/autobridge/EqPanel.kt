@@ -48,7 +48,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                     addView(text(26f, MUTED).apply { text = "SOUND"; letterSpacing = 0.25f })
                     addView(text(64f, light = true).apply { text = "Equalizer" })
                 }, LinearLayout.LayoutParams(0, -2, 1f))
-                // Icons only: EQ on/off, the pencil (shows or hides the knobs and curve in Park; while driving they're
+                // Icons only: EQ on/off, the pencil (shows or hides the fader caps in Park; while driving they're
                 // always hidden), Android Auto, then the gear back to settings.
                 addView(power, LinearLayout.LayoutParams(px(150), px(110)))
                 addView(adjust, LinearLayout.LayoutParams(px(150), px(110)).apply { marginStart = px(22) })
@@ -167,12 +167,12 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         }
     }
 
-    /** All 10 bands in one view: grid, a smooth curve through the knobs, and dB values; drag to set. */
+    /** All 10 bands in one view: grid, LED lights, a fader cap per band and dB values; drag to set. */
     private class EqView(c: Context, private val k: Float, private val onChange: (FloatArray) -> Unit) : View(c) {
         var gains = FloatArray(Equalizer.BANDS.size)
             set(v) { field = v; invalidate() }
         var dim = false
-        /** False: only the lights, no knobs, curve or values, and dragging does nothing. */
+        /** False: only the lights, no fader caps or values, and dragging does nothing. */
         var adjust = true
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private val top get() = 110f * k
@@ -183,7 +183,6 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         private fun y(db: Float) = top + (bottom - top) * (Equalizer.MAX_DB - db) / (2 * Equalizer.MAX_DB)
 
         override fun onDraw(c: Canvas) {
-            val accent = if (dim) MUTED else WHITE
             p.typeface = face
             // grid: +12, +6, 0, -6, -12 dB
             for ((n, db) in GRID.withIndex()) {
@@ -198,23 +197,9 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
             for (i in gains.indices) c.drawText(Equalizer.LABELS[i], x(i), bottom + 64f * k, p)
             p.textSize = 22f * k; p.textAlign = Paint.Align.RIGHT; c.drawText("Hz", right, bottom + 100f * k, p)
             if (!adjust) return
-            // curve through the knobs
-            val path = curve.apply {
-                reset()
-                moveTo(left, y(gains.first()))
-                lineTo(x(0), y(gains[0]))
-                for (i in 1 until gains.size) {
-                    val mx = (x(i - 1) + x(i)) / 2
-                    cubicTo(mx, y(gains[i - 1]), mx, y(gains[i]), x(i), y(gains[i]))
-                }
-                lineTo(right, y(gains.last()))
-            }
-            p.style = Paint.Style.STROKE; p.strokeWidth = 11f * k; p.color = BLACK; c.drawPath(path, p)  // dark edge: readable over lit lights
-            p.strokeWidth = 5f * k; p.color = accent; c.drawPath(path, p)
             // knobs, values, labels
             for (i in gains.indices) {
-                p.style = Paint.Style.FILL; p.color = BLACK; c.drawCircle(x(i), y(gains[i]), 24f * k, p)
-                p.style = Paint.Style.STROKE; p.strokeWidth = 5f * k; p.color = accent; c.drawCircle(x(i), y(gains[i]), 24f * k, p)
+                cap(c, x(i), y(gains[i]))
                 p.style = Paint.Style.FILL; p.textAlign = Paint.Align.CENTER
                 p.color = WHITE; p.textSize = 30f * k
                 val g = gains[i]
@@ -229,7 +214,6 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         private val tick = Runnable { invalidate() }
         // Made once, not 30 times a second: the meter redraws the whole view.
         private val face = Fonts.of(context)
-        private val curve = Path()
         private val valueText = Array(Equalizer.BANDS.size) { "" }
         private val valueOf = FloatArray(Equalizer.BANDS.size) { Float.NaN }
 
@@ -248,7 +232,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                     seg.set(x(i) - half, bottom - (n + 1) * segH + 4 * k, x(i) + half, bottom - n * segH - 4 * k)
                     if (n >= lit) { p.color = LED_OFF; c.drawRoundRect(seg, 3 * k, 3 * k, p); continue }
                     val led = when { n < SEGMENTS * 0.6f -> LED_GREEN; n < SEGMENTS * 0.85f -> LED_YELLOW; else -> LED_RED }
-                    val a = if (dim) 0x66 else 0xFF  // EQ off: the lights dim with the curve
+                    val a = if (dim) 0x66 else 0xFF  // EQ off: the lights dim with the caps
                     halo.set(seg.left - 5 * k, seg.top - 5 * k, seg.right + 5 * k, seg.bottom + 5 * k)
                     p.color = (led and 0xFFFFFF) or ((a / 5) shl 24); c.drawRoundRect(halo, 8 * k, 8 * k, p)  // soft glow
                     p.color = (led and 0xFFFFFF) or (a shl 24); c.drawRoundRect(seg, 3 * k, 3 * k, p)
@@ -258,6 +242,38 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
             // ~30 fps while lights move; 4 a second when no music plays and all are dark (just watching for music to start).
             val idle = heard == null && shown.all { it < 0.01f }
             if (eq.metering) postDelayed(tick, if (idle) 250L else 33L)  // only while the EQ page is open; one pending redraw, never a pile-up
+        }
+
+        // The knob: a slim black fader cap with chamfered corners, two grip grooves above and below, and a smoked-red
+        // lamp in a dark slot, brightest in the middle (dimmed when the EQ is off). No line joins the bands.
+        private val capBody = Path(); private val capSlot = RectF(); private var capFor = 0
+        private val capFill = Paint(Paint.ANTI_ALIAS_FLAG); private val lampFill = Paint(Paint.ANTI_ALIAS_FLAG)
+        private fun cap(c: Canvas, cx: Float, cy: Float) {
+            val w = 140f * k; val h = 38f * k; val cut = 7f * k
+            if (capFor != width) {  // shapes in the cap's own coordinates, made once per size
+                capFor = width
+                capBody.reset(); capBody.moveTo(-w / 2 + cut, -h / 2); capBody.lineTo(w / 2 - cut, -h / 2); capBody.lineTo(w / 2, -h / 2 + cut)
+                capBody.lineTo(w / 2, h / 2 - cut); capBody.lineTo(w / 2 - cut, h / 2); capBody.lineTo(-w / 2 + cut, h / 2)
+                capBody.lineTo(-w / 2, h / 2 - cut); capBody.lineTo(-w / 2, -h / 2 + cut); capBody.close()
+                capFill.shader = android.graphics.LinearGradient(0f, -h / 2, 0f, h / 2, intArrayOf(0xFF3A3B3D.toInt(), 0xFF1C1D1F.toInt(), 0xFF111213.toInt()), null, android.graphics.Shader.TileMode.CLAMP)
+                capSlot.set(-w * 0.27f, -h * 0.14f, w * 0.27f, h * 0.14f)
+                lampFill.shader = android.graphics.RadialGradient(0f, 0f, w * 0.27f, intArrayOf(0xFFE2402E.toInt(), 0xFF8E0F16.toInt(), 0xFF2A0306.toInt()), floatArrayOf(0f, 0.35f, 1f), android.graphics.Shader.TileMode.CLAMP)
+            }
+            c.save(); c.translate(cx, cy)
+            c.drawPath(capBody, capFill)
+            p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * k; p.color = 0xFF5A5C60.toInt(); c.drawPath(capBody, p)  // machined edge
+            p.strokeWidth = 1.5f * k
+            for (gy in floatArrayOf(-0.36f, -0.24f, 0.24f, 0.36f)) {  // grip grooves: dark line with a light lip under it
+                p.color = 0xFF050506.toInt(); c.drawLine(-w / 2 + cut, gy * h, w / 2 - cut, gy * h, p)
+                p.color = 0xFF2E2F32.toInt(); c.drawLine(-w / 2 + cut, gy * h + 1.5f * k, w / 2 - cut, gy * h + 1.5f * k, p)
+            }
+            p.style = Paint.Style.FILL; p.color = 0xFF050506.toInt()
+            c.drawRoundRect(capSlot.left - 2 * k, capSlot.top - 2 * k, capSlot.right + 2 * k, capSlot.bottom + 2 * k, h, h, p)
+            lampFill.alpha = if (dim) 0x55 else 0xFF
+            c.drawRoundRect(capSlot, h, h, lampFill)
+            p.style = Paint.Style.FILL; p.color = if (dim) 0x22FF6A50 else 0x8CFF6A50.toInt()  // the hot spot in the lens
+            c.drawOval(-w * 0.09f, -h * 0.05f, w * 0.09f, h * 0.05f, p)
+            c.restore()
         }
 
         private fun fmt(g: Float) = if (g == g.roundToInt().toFloat()) "${g.roundToInt()}" else "%.1f".format(g)
