@@ -92,7 +92,7 @@ class BatteryPanel(c: Context, private val k: Float) : View(c) {
         c.save(); c.scale(k, k)
         val w = width / k
         // card
-        val card = Path().apply { moveTo(1f, 1f); lineTo(w - 30f, 1f); lineTo(w - 1f, 30f); lineTo(w - 1f, H - 1f); lineTo(1f, H - 1f); close() }
+        val card = Path().apply { moveTo(1f, 1f); lineTo(w - 30f, 1f); lineTo(w - 1f, 30f); lineTo(w - 1f, height() - 1f); lineTo(1f, height() - 1f); close() }
         fill(BLACK); c.drawPath(card, p); line(OUTLINE, 2f); c.drawPath(card, p)
         // state pill
         val pill = i.state.label
