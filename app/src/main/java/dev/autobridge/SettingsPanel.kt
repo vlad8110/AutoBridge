@@ -47,6 +47,7 @@ class SettingsPanel(
     private val iconLamps = mutableListOf<() -> Unit>()
     private val sizeDetail = text(26f, MUTED)
     private val batteryPanel = BatteryPanel(context, k)
+    private val settingsPage = LinearLayout(context)
     private val eqPanel: EqPanel = EqPanel(context, k) { eqPanel.close(); this@SettingsPanel.close() }
 
     init {
@@ -66,7 +67,7 @@ class SettingsPanel(
             }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(28) })
             addView(text(26f, MUTED).apply { text = "WIRELESS ANDROID AUTO"; letterSpacing = 0.25f }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(10) })
             addView(LinearLayout(context).apply {
-                eqButton = bigButton(Glyph.EQ, "Equalizer", momentary = false) { eqPanel.open() }
+                eqButton = bigButton(Glyph.EQ, "Equalizer", momentary = false) { openEqPage() }
                 addView(eqButton, LinearLayout.LayoutParams(0, px(250), 1f))
                 addView(bigButton(Glyph.AA, "Android Auto") { close() }, LinearLayout.LayoutParams(0, px(250), 1f).apply { marginStart = px(22) })
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(50) })
@@ -133,19 +134,22 @@ class SettingsPanel(
                 }), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = px(22) })
             })
         }
-        addView(LinearLayout(context).apply {
+        addView(settingsPage.apply {
             setPadding(px(64), px(70), px(64), px(40))
             addView(hero, LinearLayout.LayoutParams(px(820), -1))
             addView(ScrollView(context).apply { isFillViewport = true; addView(right) }, LinearLayout.LayoutParams(0, -1, 1f).apply { marginStart = px(56) })
         }, LayoutParams(-1, -1))
         addView(eqPanel, LayoutParams(-1, -1))  // on top of the settings page when open
-        eqPanel.onClosed = ::refresh  // the Equalizer light follows the EQ switch
+        eqPanel.onClosed = { settingsPage.visibility = VISIBLE; refresh() }  // the Equalizer light follows the EQ switch
     }
+
+    /** The settings page under the EQ isn't drawn: its charging sweep would otherwise redraw 25 times a second unseen. */
+    private fun openEqPage() { eqPanel.open(); settingsPage.visibility = INVISIBLE }
 
     fun open() { shapeAtOpen = shape(); visibility = VISIBLE; refresh(); showTruck(BridgeService.latestTruck) }
 
     /** Straight to the equalizer (press and hold on the floating gear); its gear and Android Auto buttons work as usual. */
-    fun openEq() { open(); eqPanel.open() }
+    fun openEq() { open(); openEqPage() }
 
     /** The settings that change Android Auto's shape; a tile tapped on and back off changes nothing. */
     private fun shape() = listOf<Any>(s.barEnabled, s.statusBarShown, s.hevcEnabled, s.aaDpi, s.aaHidden)
