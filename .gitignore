@@ -11,3 +11,4 @@ build*.log
 local-builds/
 truck-logs/
 TODO.md
+audits/
