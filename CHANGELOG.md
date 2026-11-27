@@ -3,7 +3,7 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
-## 0.8.10 (in progress, not released)
+## 0.8.10 (November 27, 2026, truck app only)
 - Truck app: hiding Android Auto's Signal or Battery icon no longer breaks Android Auto's layout (in 0.8.9 the picture shifted left and the app dock disappeared). Back to the 0.8.8 way: the clock hides; on some phones, like the Galaxy Z Fold8, the signal and battery icons stay.
 
 ## 0.8.9 (November 27, 2026)
