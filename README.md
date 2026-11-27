@@ -50,7 +50,10 @@ Android Auto talks to the relay on its own phone and the truck connects out to t
 5. **Pair the phone with the truck over Bluetooth.** In the truck's Bluetooth settings for the
    phone, keep **Calls on** and turn **Media audio off**. Otherwise the truck's own Bluetooth player
    grabs the speakers and Android Auto's music goes silent.
-6. That's it. With AutoBridge open, the phone's Android Auto connects by itself.
+6. **Type the truck's pairing code into the phone.** It's on the truck's Settings page, under Sound
+   (12 letters, like `K7QM-3XRP-9TWD`). In AutoBridge Phone tap **Pairing code** and type it. From
+   then on the phone and truck recognize each other by the code, not the hotspot password.
+7. That's it. With AutoBridge open, the phone's Android Auto connects by itself.
 
 ## Everyday use
 
@@ -101,9 +104,9 @@ Phone (Android Auto)                           Truck (AutoBridge)
 | Port on the phone | Used for |
 |---|---|
 | 5280 (loopback) | Android Auto → relay |
-| 5300 | truck → relay (the Android Auto session; both sides first prove they know the hotspot password) |
-| 5301 / 5302 | log files / "send log" requests |
-| 5303 | a new truck asking for the hotspot details |
+| 5300 | truck → relay (the Android Auto session; both sides first prove they know the truck's pairing code) |
+| 5301 / 5302 | log files (encrypted with the pairing code) / "send log" requests |
+| 5303 | a new truck asking for the hotspot details (the answer is signed with the pairing code) |
 
 | Code | What it does |
 |---|---|
@@ -136,7 +139,7 @@ Signed release builds read the key from environment variables, so no secret live
 
 ```bash
 AB_KEYSTORE=/path/upload.jks AB_KEYSTORE_PASSWORD=... \
-  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=57 -PversionName=0.8.7
+  ./gradlew :app:bundleRelease :phone:assembleRelease -PversionCode=58 -PversionName=0.8.8
 ```
 
 Tests: `./gradlew :app:testDebugUnitTest :phone:testDebugUnitTest`.

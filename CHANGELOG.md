@@ -3,7 +3,7 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
-## 0.8.8 (in progress, not released)
+## 0.8.8 (November 27, 2026)
 - **Update both apps.** New pairing code: the truck shows a 12-letter code in Settings (under Sound). Type it once into AutoBridge Phone (Pairing code). From then on the phone and truck recognize each other by the code, not the hotspot password that everyone on the hotspot knows, so another device on the hotspot can't pose as either one. Until the code is typed, the hotspot password works as before.
 - With the code typed in: logs and screenshots travel encrypted over the hotspot, and Settings > Test only trusts hotspot details from your phone.
 - Phone app: a connection to the Android Auto port that waits more than a minute for the truck is dropped, so a stray app can't sit waiting there.
