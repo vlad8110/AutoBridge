@@ -70,26 +70,26 @@ class SettingsDot(c: Context, k: Float, private val onOpen: () -> Unit, private 
 
     override fun performClick(): Boolean { super.performClick(); onOpen(); return true }
 
-    /** A thin outline gear in the truck's line-icon style: eight rounded teeth around a hollow hub. */
+    /** The owner's gear: a thin outline with eight tapered teeth and a large round hub, light grey like the truck's icons. */
     private class Gear(c: Context) : android.view.View(c) {
         private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-            style = android.graphics.Paint.Style.STROKE; color = WHITE; strokeJoin = android.graphics.Paint.Join.ROUND
+            style = android.graphics.Paint.Style.STROKE; color = 0xFFDADCE0.toInt(); strokeJoin = android.graphics.Paint.Join.ROUND
         }
         private val path = android.graphics.Path()
 
         override fun onSizeChanged(w: Int, h: Int, ow: Int, oh: Int) {
-            val r = minOf(w, h) / 2f * 0.62f; val cx = w / 2f; val cy = h / 2f
+            val r = minOf(w, h) / 2f * 0.66f; val cx = w / 2f; val cy = h / 2f
             val step = (2 * Math.PI / 8).toFloat()
             path.reset()
-            for (i in 0 until 8) for ((j, pt) in listOf(-0.30f to 0.78f, -0.16f to 1f, 0.16f to 1f, 0.30f to 0.78f).withIndex()) {
+            for (i in 0 until 8) for ((j, pt) in listOf(-0.39f to 0.76f, -0.21f to 1f, 0.21f to 1f, 0.39f to 0.76f).withIndex()) {
                 val a = i * step + pt.first * step
                 val x = cx + pt.second * r * kotlin.math.cos(a); val y = cy + pt.second * r * kotlin.math.sin(a)
                 if (i == 0 && j == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
             path.close()
-            path.addCircle(cx, cy, r * 0.34f, android.graphics.Path.Direction.CW)
-            p.strokeWidth = r * 0.15f
-            p.pathEffect = android.graphics.CornerPathEffect(r * 0.08f)
+            path.addCircle(cx, cy, r * 0.50f, android.graphics.Path.Direction.CW)
+            p.strokeWidth = r * 0.10f
+            p.pathEffect = android.graphics.CornerPathEffect(r * 0.07f)
             p.setShadowLayer(r * 0.25f, 0f, 0f, 0xD0000000.toInt())
         }
 

@@ -11,7 +11,7 @@ The truck app comes from the Play Store test. The phone app is on the [Releases]
 - Phone app: the Refresh button no longer gets cut off against the hotspot box under it.
 - Press and hold the floating gear to go straight to the equalizer (a tap still opens settings, a drag still moves it).
 - Truck bar: the speed shows only out of Park, and the charge port only while it's open, plugged in or charging. When they're hidden, the regen/power meter stretches into their space. (Tapping the port, the hidden shortcut to settings, works whenever it shows; the floating gear always does.)
-- The settings gear over Android Auto: no more dark circle behind it, and a new thin outline gear in the same line style as Android Auto's own bar icons (with a soft shadow so it still shows over a light map). It starts lower, in the middle of Android Auto's bottom bar.
+- The settings gear over Android Auto: no more dark circle behind it, and the owner's gear: a thin light-grey outline with eight tapered teeth and a large round centre (with a soft shadow so it still shows over a light map). It starts lower, in the middle of Android Auto's bottom bar.
 
 ## 0.8.7 (November 26, 2026)
 - The settings gear over Android Auto now starts in the empty part of Android Auto's bottom bar (between the mic and the app icons) instead of over Android Auto's own buttons in the top-right corner. Drag it anywhere; it stays there.
