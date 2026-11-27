@@ -130,6 +130,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         aa.contentDescription = "Android Auto, ${if (running) "running" else "not connected"}"
         val shown = s.eqAdjust && !driving()
         Lamp.lit(adjust, shown); adjust.alpha = if (driving()) 0.4f else 1f
+        adjust.isEnabled = !driving()  // while driving: no press spring, no click sound, nothing happens (a disabled view gets no touches)
         adjust.contentDescription = if (driving()) "Edit bands, parked only" else "Edit bands, ${if (shown) "shown" else "hidden"}"
         hint.text = when {
             driving() -> "Park the truck to adjust the bands."
