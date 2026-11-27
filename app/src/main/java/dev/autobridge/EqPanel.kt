@@ -233,7 +233,9 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                 }
             }
             removeCallbacks(tick)
-            if (eq.metering) postDelayed(tick, 33)  // ~30 fps, only while the EQ page is open; one pending redraw, never a pile-up
+            // ~30 fps while lights move; 4 a second when no music plays and all are dark (just watching for music to start).
+            val idle = heard == null && shown.all { it < 0.01f }
+            if (eq.metering) postDelayed(tick, if (idle) 250L else 33L)  // only while the EQ page is open; one pending redraw, never a pile-up
         }
 
         private fun fmt(g: Float) = if (g == g.roundToInt().toFloat()) "${g.roundToInt()}" else "%.1f".format(g)
