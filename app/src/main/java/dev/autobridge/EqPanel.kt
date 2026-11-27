@@ -23,8 +23,9 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
     private val eq = Equalizer.music
     private val bands = EqView(context, k) { g -> eq.gains = g; save(CUSTOM) }
     private val presetViews = mutableMapOf<String, TextView>()
-    private val power = text(32f)
-    private val adjust = text(32f)
+    private val power = icon(SettingsPanel.Glyph.EQ) { eq.enabled = !eq.enabled; s.eqEnabled = eq.enabled; refresh() }
+    private val adjust = icon(SettingsPanel.Glyph.EDIT) { if (!driving()) { s.eqAdjust = !s.eqAdjust; refresh() } }
+    private val aa = icon(SettingsPanel.Glyph.AA, momentary = true) { toAndroidAuto() }
     private val hint = text(26f, MUTED)
     private val slots = (1..SLOTS).map { n ->
         Lamp.button(context, k, "Custom $n", 27f, 18f, momentary = false) { load(n) }.apply {
@@ -47,23 +48,16 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                     addView(text(26f, MUTED).apply { text = "SOUND"; letterSpacing = 0.25f })
                     addView(text(64f, light = true).apply { text = "Equalizer" })
                 }, LinearLayout.LayoutParams(0, -2, 1f))
-                addView(power.apply {
-                    gravity = Gravity.CENTER; letterSpacing = 0.02f; setPadding(0, 0, 0, px(6))
-                    Lamp.style(this, k, px(20).toFloat(), momentary = false)
-                    setOnClickListener { eq.enabled = !eq.enabled; s.eqEnabled = eq.enabled; refresh() }
-                }, LinearLayout.LayoutParams(px(240), px(110)))
-                // Shows or hides the drag knobs and curve in Park; while driving they're always hidden.
-                addView(adjust.apply {
-                    text = "Adjust"; gravity = Gravity.CENTER; letterSpacing = 0.02f; setPadding(0, 0, 0, px(6))
-                    Lamp.style(this, k, px(20).toFloat(), momentary = false)
-                    setOnClickListener { if (!driving()) { s.eqAdjust = !s.eqAdjust; refresh() } }
-                }, LinearLayout.LayoutParams(px(240), px(110)).apply { marginStart = px(22) })
-                addView(Lamp.button(context, k, "Android Auto", 32f) { toAndroidAuto() }, LinearLayout.LayoutParams(px(300), px(110)).apply { marginStart = px(22) })
+                // Icons only: EQ on/off, the pencil (shows or hides the knobs and curve in Park; while driving they're
+                // always hidden), Android Auto, then the gear back to settings.
+                addView(power, LinearLayout.LayoutParams(px(150), px(110)))
+                addView(adjust, LinearLayout.LayoutParams(px(150), px(110)).apply { marginStart = px(22) })
+                addView(aa, LinearLayout.LayoutParams(px(150), px(110)).apply { marginStart = px(22) })
                 // Back to settings: a gear, last in the row.
                 addView(GearView(context).apply {
                     contentDescription = "Settings"; setPadding(px(37), px(22), px(37), px(30))
                     Lamp.style(this, k, px(20).toFloat()); setOnClickListener { close() }
-                }, LinearLayout.LayoutParams(px(130), px(110)).apply { marginStart = px(22) })
+                }, LinearLayout.LayoutParams(px(150), px(110)).apply { marginStart = px(22) })
             })
             addView(text(26f, MUTED).apply { text = "PRESETS"; letterSpacing = 0.22f }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(48); bottomMargin = px(18) })
             addView(LinearLayout(context).apply {
@@ -130,16 +124,25 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
             b.setTextColor(if (empty) MUTED else WHITE)
             b.contentDescription = "Custom $n, " + if (empty) "empty (flat). Press and hold to save the current curve here." else "saved. Press and hold to save the current curve here instead."
         }
-        power.text = if (eq.enabled) "EQ on" else "EQ off"
-        Lamp.lit(power, eq.enabled)
+        Lamp.lit(power, eq.enabled); power.contentDescription = "Equalizer ${if (eq.enabled) "on" else "off"}"
+        val running = BridgeService.instance?.video != null  // Android Auto's badge: blue while it runs, grey when not
+        (aa.getChildAt(0) as SettingsPanel.GlyphView).running = running
+        aa.contentDescription = "Android Auto, ${if (running) "running" else "not connected"}"
         val shown = s.eqAdjust && !driving()
-        Lamp.lit(adjust, shown); adjust.setTextColor(if (driving()) MUTED else WHITE)
+        Lamp.lit(adjust, shown); adjust.alpha = if (driving()) 0.4f else 1f
+        adjust.contentDescription = if (driving()) "Edit bands, parked only" else "Edit bands, ${if (shown) "shown" else "hidden"}"
         hint.text = when {
             driving() -> "Park the truck to adjust the bands."
-            !shown -> "Tap Adjust to show the bands."
+            !shown -> "Tap the pencil to show the bands."
             else -> "Drag a band up or down. Changes music only; for the cleanest sound, keep the truck's own Bass, Mid and Treble centered."
         }
         bands.adjust = shown; bands.dim = !eq.enabled; bands.invalidate()
+    }
+
+    /** A lamp button with just a picture, like the gear. */
+    private fun icon(glyph: SettingsPanel.Glyph, momentary: Boolean = false, onClick: () -> Unit) = FrameLayout(context).apply {
+        addView(SettingsPanel.GlyphView(context, glyph), LayoutParams(px(60), px(60), Gravity.CENTER).apply { bottomMargin = px(6) })
+        Lamp.style(this, k, px(20).toFloat(), momentary); setOnClickListener { onClick() }
     }
 
     private fun px(v: Int) = (v * k).roundToInt()

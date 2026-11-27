@@ -255,7 +255,7 @@ class SettingsPanel(
         minWidth = px(120); setPadding(px(22), 0, px(22), px(6))
     }
 
-    private enum class Glyph { EQ, AA }
+    enum class Glyph { EQ, AA, EDIT }
 
     private companion object {
         const val DPI_STEP = 10
@@ -274,8 +274,8 @@ class SettingsPanel(
         setOnClickListener { onClick() }
     }
 
-    /** The button pictures: EQ sliders, or Android Auto's round badge (blue while it runs, grey when not). */
-    private class GlyphView(c: Context, private val glyph: Glyph) : View(c) {
+    /** The button pictures: EQ sliders, a pencil, or Android Auto's round badge (blue while it runs, grey when not). */
+    class GlyphView(c: Context, private val glyph: Glyph) : View(c) {
         var running = false
             set(v) { if (field != v) { field = v; invalidate() } }
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -289,6 +289,16 @@ class SettingsPanel(
                     p.style = Paint.Style.FILL; p.color = BLACK; c.drawCircle(x * u, y * u, 5 * u, p)
                     p.style = Paint.Style.STROKE; p.color = WHITE; c.drawCircle(x * u, y * u, 5 * u, p)
                 }
+                return
+            }
+            if (glyph == Glyph.EDIT) {  // a pencil, tip at the bottom left
+                p.style = Paint.Style.STROKE; p.strokeWidth = 3 * u; p.color = WHITE
+                c.save(); c.rotate(-45f, 24 * u, 24 * u)
+                c.drawPath(android.graphics.Path().apply {
+                    moveTo(4 * u, 24 * u); lineTo(13 * u, 18 * u); lineTo(44 * u, 18 * u); lineTo(44 * u, 30 * u); lineTo(13 * u, 30 * u); close()
+                }, p)
+                c.drawLine(36 * u, 18 * u, 36 * u, 30 * u, p)  // the eraser band
+                c.restore()
                 return
             }
             p.style = Paint.Style.FILL; p.color = if (running) AA_BLUE else AA_GREY; c.drawCircle(24 * u, 24 * u, 22 * u, p)

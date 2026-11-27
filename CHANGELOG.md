@@ -4,7 +4,7 @@ What changed in each AutoBridge version since the project went public (November 
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
 ## 0.8.9 (in progress, not released)
-- Equalizer: while driving, the drag knobs, the curve and the dB numbers hide, leaving the lights. A new Adjust button (between EQ on and Android Auto) hides them in Park too; tap it again to bring them back.
+- Equalizer: while driving, the drag knobs, the curve and the dB numbers hide, leaving the lights. A new pencil button (between the EQ switch and Android Auto) hides them in Park too; tap it again to bring them back. The EQ switch and the Android Auto button on that page are now icons, like the settings page.
 - Android Auto icons: hiding the phone's signal and battery now also uses the newer way Android Auto asks for it (the head unit lists the icons it draws itself), since newer Android Auto versions ignore the old switch. The clock already worked.
 - Two phones on the hotspot: only the phone whose Android Auto the truck started over Bluetooth answers the truck, so the truck no longer connects to a passenger's phone that also runs AutoBridge Phone. Update both apps.
 
