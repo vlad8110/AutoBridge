@@ -593,7 +593,10 @@ class BridgeService : Service() {
 
     private fun readCarInfo(props: CarPropertyManager): Array<String> {
         fun read(id: Int) = runCatching { props.getProperty<Any>(id, 0).value?.toString()?.trim() ?: "" }.getOrDefault("")
-        return arrayOf(read(VehiclePropertyIds.INFO_MAKE), read(VehiclePropertyIds.INFO_MODEL), read(VehiclePropertyIds.INFO_MODEL_YEAR))
+        val make = read(VehiclePropertyIds.INFO_MAKE)
+        // GM reports its internal code: name the truck the way the owner would.
+        val model = read(VehiclePropertyIds.INFO_MODEL).let { if (it == "BT1CG") "Sierra EV Denali" else it }
+        return arrayOf(make, model, read(VehiclePropertyIds.INFO_MODEL_YEAR))
             .also { Log.i(TAG, "truck for Android Auto: ${it.joinToString(" ").ifBlank { "not shared" }}") }
     }
 

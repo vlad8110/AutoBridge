@@ -3,7 +3,11 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
-## 0.8.7 (in progress, not released)
+## 0.8.7 (November 26, 2026)
+- The settings gear over Android Auto now starts in the empty part of Android Auto's bottom bar (between the mic and the app icons) instead of over Android Auto's own buttons in the top-right corner. Drag it anywhere; it stays there.
+- Android Auto size: the layout named under the size now matches what the truck shows ("Map on top, two cards" where it used to say "Map and one card").
+- Android Auto now sees the truck as a GMC Sierra EV Denali (GM reports only its code, BT1CG).
+- Phone app: its button lights match the truck's: thinner, a little dimmer, fading at both ends.
 - New font: Montserrat, the closest free match to the truck's own wide, round climate-bar font, on the settings, equalizer and dialogs (the truck bar under Android Auto is unchanged). A few labels got shorter to fit: Voice, To the phone, Lit: shown.
 - The log now records the Android Auto size and hidden icons, and lists the fonts installed on the truck.
 - Send log now sends everything the truck has saved (up to about 4 MB, several days of drives) instead of only the newest 10,000 lines, with the newest app start at the top and the oldest at the bottom.

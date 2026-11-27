@@ -88,9 +88,9 @@ object Display {
         val tall = h >= 900 && ratio < 1.2
         return when {
             w >= 1240 && w > h && (ratio >= 1.67 || !tall) -> "Map beside cards"
-            tall -> "Map on top"
+            tall -> "Map on top, big cards"
             w >= 880 && ratio >= 1.67 -> "Map and side bar"
-            h >= 680 -> "Map and one card"
+            h >= 680 -> "Map on top, two cards"  // seen in the truck: 2012x1710 at 400
             else -> "One app at a time"
         }
     }

@@ -55,7 +55,7 @@ class MainActivity : Activity() {
         text = label; gravity = Gravity.CENTER; maxLines = 1
         if (bold) typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
         if (small) setPadding(dp(14), dp(8), dp(14), dp(11)) else setPadding(dp(16), dp(14), dp(16), dp(17))
-        val d = Chamfer(BLACK, OUTLINE, dp(if (small) 8 else 10).toFloat(), dp(1).toFloat()).apply { lamp = dp(if (small) 3 else 4).toFloat() }
+        val d = Chamfer(BLACK, OUTLINE, dp(if (small) 8 else 10).toFloat(), dp(1).toFloat()).apply { lamp = dp(if (small) 2 else 3).toFloat() /* thin, like the truck's */ }
         background = d
         val off = Runnable { d.lit = false; d.invalidateSelf() }
         setOnTouchListener { v, e ->
@@ -285,8 +285,14 @@ class MainActivity : Activity() {
             p.style = Paint.Style.STROKE; p.strokeWidth = w; p.color = stroke; c.drawPath(path, p)
             if (lamp > 0f) {
                 val inset = lamp * 2
-                p.style = Paint.Style.FILL; p.color = if (lit) LAMP_ON else LAMP_OFF
-                c.drawRoundRect(b.left + inset, b.bottom - inset - lamp, b.right - inset, b.bottom - inset, lamp / 2, lamp / 2, p)
+                val color = if (lit) LAMP_ON else LAMP_OFF
+                val l = b.left + inset; val r = b.right - inset
+                // A real lamp dims where its curved lens turns away at each end (as the truck app's lamps).
+                val dim = (color and 0xFFFFFF) or 0x55000000
+                p.style = Paint.Style.FILL
+                p.shader = android.graphics.LinearGradient(l, 0f, r, 0f, intArrayOf(dim, color, color, dim), floatArrayOf(0f, 0.2f, 0.8f, 1f), android.graphics.Shader.TileMode.CLAMP)
+                c.drawRoundRect(l, b.bottom - inset - lamp, r, b.bottom - inset, lamp / 2, lamp / 2, p)
+                p.shader = null
             }
         }
         override fun setAlpha(alpha: Int) {}
@@ -304,7 +310,7 @@ class MainActivity : Activity() {
         const val DIM = 0xFF5F6368.toInt()
         const val OUTLINE = 0xFF8E939B.toInt()
         const val LAMP_OFF = 0xFF2B0A0F.toInt()
-        const val LAMP_ON = 0xFFFF2A45.toInt()
+        const val LAMP_ON = 0xFFE8243C.toInt()  // a tad below full red, as the truck app
         const val GREEN = 0xFF81C995.toInt()
         const val AMBER = 0xFFF2BD64.toInt()
     }

@@ -51,10 +51,13 @@ class DisplayTest {
 
     @Test fun predictsTheLayoutYouGetInTheSierra() {
         // Both bars off: 2012 x 1680 is just taller than 1.2, so the map goes on top...
-        assertEquals("Map on top", Display.layout(2012, 1680, 240))
+        assertEquals("Map on top, big cards", Display.layout(2012, 1680, 240))
         // ...and four pixels less height is enough to put it beside the cards: why one stale measurement flipped it.
         assertEquals("Map beside cards", Display.layout(2012, 1676, 240))
         // A higher density makes the screen look smaller: fewer cards.
-        assertEquals("Map and one card", Display.layout(2012, 1460, 300))
+        assertEquals("Map on top, two cards", Display.layout(2012, 1460, 300))
+        // From the truck (truck bar on, status bar off): 400 gave the map on top with two cards, 410 one app at a time.
+        assertEquals("Map on top, two cards", Display.layout(2012, 1710, 400))
+        assertEquals("One app at a time", Display.layout(2012, 1710, 410))
     }
 }

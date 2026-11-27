@@ -30,7 +30,9 @@ class SettingsDot(c: Context, k: Float, private val onOpen: () -> Unit) : FrameL
     /** Puts the gear where it was left, once the screen has a size. */
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         super.onLayout(changed, l, t, r, b)
-        if (changed) place(prefs.getFloat("dotX", 0.95f), prefs.getFloat("dotY", 0.05f))
+        // Starts in the empty stretch of Android Auto's bottom bar, between the mic and the app icons (its top-right
+        // corner held Android Auto's own buttons). New keys, so a gear left in the old corner moves too.
+        if (changed) place(prefs.getFloat("gearX", 0.22f), prefs.getFloat("gearY", 0.94f))
     }
 
     private fun place(fx: Float, fy: Float) {
@@ -55,8 +57,8 @@ class SettingsDot(c: Context, k: Float, private val onOpen: () -> Unit) : FrameL
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 alpha = 1f
-                if (dragging) prefs.edit().putFloat("dotX", x / (p.width - size).coerceAtLeast(1))
-                    .putFloat("dotY", y / (p.height - size).coerceAtLeast(1)).apply()
+                if (dragging) prefs.edit().putFloat("gearX", x / (p.width - size).coerceAtLeast(1))
+                    .putFloat("gearY", y / (p.height - size).coerceAtLeast(1)).apply()
                 else if (e.actionMasked == MotionEvent.ACTION_UP) performClick()
             }
         }
