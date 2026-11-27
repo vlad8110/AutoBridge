@@ -3,7 +3,8 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
-## 0.8.1 (in progress, not released)
+## 0.8.5 (November 26, 2026)
+- Fixed: the battery card on the settings page lost its bottom edge when the truck wasn't charging.
 - Equalizer: Truck, Vocal and Highway presets removed. Three saved curves (Custom 1, 2, 3) at the end of the presets, like the truck's radio favorites: tap to load, press and hold to save the curve you have now. An empty one saves on the first tap.
 - Equalizer lights now hit on the beat: they wait for the speakers instead of showing the music about a second early.
 - Phone app: on home or work Wi-Fi it says "Not on the truck's hotspot" instead of asking for a password in amber.
