@@ -58,7 +58,8 @@ object BatteryInfo {
             toAddLabel = limitText?.let { "TO $it" } ?: "TO LIMIT",
             toAdd = toAddWh?.let { if (it > 500) "${(it / 1000).roundToInt()} kWh" else "At limit" } ?: NONE,
             current = t.currentA?.let { "${it.roundToInt()} A" } ?: NONE,
-            powerOut = t.rateMw?.let { it / 1_000_000f }?.takeIf { !t.charging && it > 0f }?.let { "${BarText.number(it)} kW" } ?: NONE,
+            // The truck reports whole kW, so a running truck reads 0 below 1 kW: show 1, never an empty cell.
+            powerOut = t.rateMw?.let { it / 1_000_000f }?.takeIf { !t.charging && it >= 0f }?.let { "${BarText.number(it.coerceAtLeast(1f))} kW" } ?: NONE,
         )
     }
 }

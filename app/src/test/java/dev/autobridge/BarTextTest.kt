@@ -78,6 +78,7 @@ class BatteryInfoTest {
         assertEquals("65 kWh", i.toAdd)  // 165.3 − 100 kWh to reach the 80% limit
         assertEquals("20 kW", i.powerOut)  // driving: power leaving the battery, shown red
         assertEquals("—", BatteryInfo.of(charging, true, java.time.LocalTime.NOON).powerOut)  // charging: none going out
+        assertEquals("1 kW", BatteryInfo.of(charging.copy(chargeState = 3, portConnected = false, rateMw = 0f), true, java.time.LocalTime.NOON).powerOut)  // under 1 kW reads 0: still shown, as 1
         assertEquals(BatteryInfo.State.PLUGGED, BatteryInfo.of(charging.copy(chargeState = 3, rateMw = 0f), true, java.time.LocalTime.NOON).state)
     }
 }

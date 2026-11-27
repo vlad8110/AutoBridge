@@ -40,8 +40,8 @@ class SettingsPanel(
     private val version = sysValue(); private val picture = sysValue(); private val sound = sysValue(); private val aaState = sysValue()
     private lateinit var eqButton: View
     private lateinit var aaGlyph: GlyphView
-    private val hotspot = text(40f)
-    private val hotspotDetail = text(26f, MUTED, mono = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
+    private val hotspot = text(30f).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
+    private val hotspotDetail = text(22f, MUTED, mono = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
     private val voiceDetail = text(26f, MUTED).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
     private val tiles = mutableListOf<() -> Unit>()
     private val iconLamps = mutableListOf<() -> Unit>()
@@ -71,8 +71,20 @@ class SettingsPanel(
                 addView(bigButton(Glyph.AA, "Android Auto") { close() }, LinearLayout.LayoutParams(0, px(250), 1f).apply { marginStart = px(22) })
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(50) })
             addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))
-            // Below: the phone, then quiet system details only needed when something isn't working.
-            addView(phone, LinearLayout.LayoutParams(-1, -2))
+            // Below: the phone, the hotspot it joins (set once, so kept quiet), then system details only needed when something isn't working.
+            addView(phone, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(24) })
+            addView(text(22f, MUTED).apply { text = "Truck hotspot" }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(14) })
+            addView(hotspot, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(2) })
+            addView(hotspotDetail, LinearLayout.LayoutParams(-1, -2))
+            addView(LinearLayout(context).apply {
+                addView(small("Test") {
+                    val service = BridgeService.instance ?: return@small toast("AutoBridge isn't running")
+                    toast("Checking the hotspot details with your phone…")
+                    service.testWifi { toast(it); refresh() }
+                }, LinearLayout.LayoutParams(-2, px(72)))
+                addView(small("Edit") { editWifi() }, LinearLayout.LayoutParams(-2, px(72)).apply { marginStart = px(16) })
+                addView(small("Forget") { confirmForget() }, LinearLayout.LayoutParams(-2, px(72)).apply { marginStart = px(16) })
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(14) })
             addView(View(context).apply { setBackgroundColor(0xFF2A2D31.toInt()) }, LinearLayout.LayoutParams(-1, px(2)).apply { topMargin = px(18) })
             addView(LinearLayout(context).apply {
                 orientation = LinearLayout.VERTICAL
@@ -88,17 +100,13 @@ class SettingsPanel(
         val right = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             addView(batteryPanel, LinearLayout.LayoutParams(-1, -2))  // no heading: it's plainly the battery
-            addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))  // spare height goes here, so Close app ends level with the left card
-            header("DISPLAY")
+            addView(text(34f).apply { text = "DISPLAY"; letterSpacing = 0.22f }, LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(26) })
             addView(text(26f, MUTED).apply { text = "Changes restart Android Auto when you go back to it." },
-                LinearLayout.LayoutParams(-2, -2).apply { topMargin = -px(6); bottomMargin = px(16) })
-            addView(LinearLayout(context).apply {
-                addView(tile(Glyph.BAR, "Truck bar", "Battery, range, speed and power under Android Auto", { s.barEnabled }) { s.barEnabled = it }, LinearLayout.LayoutParams(0, px(168), 1f))
-                addView(tile(Glyph.STATUS, "Status bar", "Time, phone and alerts at the top. Off gives Android Auto the space", { s.statusBarShown }) { s.statusBarShown = it },
-                    LinearLayout.LayoutParams(0, px(168), 1f).apply { marginStart = px(22) })
-                addView(tile(Glyph.HD, "HD picture", "1440p (H.265), drops to 1080p by itself", { s.hevcEnabled }) { s.hevcEnabled = it },
-                    LinearLayout.LayoutParams(0, px(168), 1f).apply { marginStart = px(22) })
-            })
+                LinearLayout.LayoutParams(-2, -2).apply { topMargin = px(2); bottomMargin = px(16) })
+            addView(row(text(40f).apply { text = "Screen" }, text(26f, MUTED).apply { text = "Lit: on" },
+                toggle("Truck bar", "Battery, range, speed and power under Android Auto", { s.barEnabled }) { s.barEnabled = it },
+                toggle("Status bar", "Time, phone and alerts at the top. Off gives Android Auto the space", { s.statusBarShown }) { s.statusBarShown = it },
+                toggle("HD picture", "1440p (H.265), drops to 1080p by itself", { s.hevcEnabled }) { s.hevcEnabled = it }))
             // Android Auto's density, kept separately for each truck bar / status bar combination.
             addView(row(text(40f).apply { text = "Android Auto size" }, sizeDetail,
                 button("−") { setDpi(Display.dpi(context) - DPI_STEP) },
@@ -111,12 +119,7 @@ class SettingsPanel(
                         iconLamps += { Lamp.lit(this, s.aaHidden and bit == 0) }
                     }
                 }.toTypedArray()), LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(22) })
-            header("TRUCK HOTSPOT")
-            addView(row(hotspot, hotspotDetail, button("Test") {
-                val service = BridgeService.instance ?: return@button toast("AutoBridge isn't running")
-                toast("Checking the hotspot details with your phone…")
-                service.testWifi { toast(it); refresh() }
-            }, button("Edit") { editWifi() }, button("Forget") { confirmForget() }))
+            addView(View(context), LinearLayout.LayoutParams(1, 0, 1f))  // spare height goes here, so Close app ends level with the left card
             header("PHONE")
             addView(LinearLayout(context).apply {
                 addView(row(text(40f).apply { text = "Voice button" }, voiceDetail, button("Change") {
@@ -188,7 +191,7 @@ class SettingsPanel(
         sound.text = if (video != null) "${AudioOut.MUSIC_HZ / 1000} kHz stereo, $eqWord" else eqWord  // no rate with nothing playing
         aaState.text = if (video != null) "Running" else "Not connected"
         Lamp.lit(eqButton, Equalizer.music.enabled)  // lit while the EQ is on
-        aaGlyph.play = if (video != null) LampDrawable.LAMP_ON else WHITE  // red play sign while Android Auto runs
+        aaGlyph.running = video != null  // Android Auto blue while it runs, grey when not
         aaGlyph.invalidate(); (aaGlyph.parent as View).contentDescription = "Android Auto, ${if (video != null) "running" else "not connected"}"
     }
 
@@ -232,26 +235,19 @@ class SettingsPanel(
         minWidth = px(150); setPadding(px(26), 0, px(26), px(6))
     }
 
-    /** A setting tile; its lamp is lit while on. Tap to switch. */
-    private fun tile(glyph: Glyph, title: String, detail: String, get: () -> Boolean, set: (Boolean) -> Unit): View {
-        val icon = GlyphView(context, glyph)
-        val box = LinearLayout(context).apply {
-            gravity = Gravity.CENTER_VERTICAL; setPadding(px(24), px(14), px(16), px(28))
-            addView(icon, LinearLayout.LayoutParams(px(68), px(68)))
-            addView(text(32f).apply { text = title; maxLines = 1 }, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = px(20) })
-            Lamp.style(this, k, px(26).toFloat(), momentary = false)
+    /** A switch in a row; its lamp is lit while on. Tap to switch. */
+    private fun toggle(title: String, detail: String, get: () -> Boolean, set: (Boolean) -> Unit) =
+        Lamp.button(context, k, title, momentary = false) { set(!get()); shapeChanged = true; refresh() }.apply {  // the size row follows the bars
+            minWidth = px(150); setPadding(px(24), 0, px(24), px(6))
+            tiles += { Lamp.lit(this, get()); contentDescription = "$title. $detail" }
         }
-        val paint = {
-            val on = get()
-            Lamp.lit(box, on)
-            box.contentDescription = "$title. $detail"
-        }
-        tiles += paint
-        box.setOnClickListener { set(!get()); shapeChanged = true; refresh() }  // the size row follows the bars
-        return box
+
+    /** A quiet button for set-once things like the hotspot. */
+    private fun small(label: String, onClick: () -> Unit) = Lamp.button(context, k, label, size = 24f, cut = 14f, onClick = onClick).apply {
+        minWidth = px(120); setPadding(px(22), 0, px(22), px(6))
     }
 
-    private enum class Glyph { BAR, STATUS, HD, EQ, AA }
+    private enum class Glyph { EQ, AA }
 
     private companion object {
         const val DPI_STEP = 10
@@ -270,37 +266,28 @@ class SettingsPanel(
         setOnClickListener { onClick() }
     }
 
-    /** The tile pictures: a screen with the bar at the bottom, the status bar at the top, or "HD". */
+    /** The button pictures: EQ sliders, or Android Auto's round badge (blue while it runs, grey when not). */
     private class GlyphView(c: Context, private val glyph: Glyph) : View(c) {
-        private val color = WHITE
-        /** The play sign's colour on the Android Auto button: red while it runs. */
-        var play = WHITE
+        var running = false
+            set(v) { if (field != v) { field = v; invalidate() } }
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         override fun onDraw(c: Canvas) {
             val u = width / 48f
-            p.color = color; p.style = Paint.Style.STROKE; p.strokeWidth = 3 * u; p.strokeCap = Paint.Cap.ROUND
+            p.strokeCap = Paint.Cap.ROUND; p.strokeJoin = Paint.Join.ROUND
             if (glyph == Glyph.EQ) {  // three sliders, knobs at different heights
-                for ((x, k) in listOf(10f to 30f, 24f to 15f, 38f to 25f)) {
-                    p.style = Paint.Style.STROKE; c.drawLine(x * u, 6 * u, x * u, 42 * u, p)
-                    p.style = Paint.Style.FILL; p.color = BLACK; c.drawCircle(x * u, k * u, 5 * u, p)
-                    p.style = Paint.Style.STROKE; p.color = color; c.drawCircle(x * u, k * u, 5 * u, p)
+                p.strokeWidth = 3 * u
+                for ((x, y) in listOf(10f to 30f, 24f to 15f, 38f to 25f)) {
+                    p.style = Paint.Style.STROKE; p.color = WHITE; c.drawLine(x * u, 6 * u, x * u, 42 * u, p)
+                    p.style = Paint.Style.FILL; p.color = BLACK; c.drawCircle(x * u, y * u, 5 * u, p)
+                    p.style = Paint.Style.STROKE; p.color = WHITE; c.drawCircle(x * u, y * u, 5 * u, p)
                 }
                 return
             }
-            c.drawRect(RectF(4 * u, 8 * u, 44 * u, 40 * u), p)
-            p.style = Paint.Style.FILL
-            when (glyph) {
-                Glyph.BAR -> c.drawRect(8 * u, 30 * u, 40 * u, 36 * u, p)
-                Glyph.STATUS -> c.drawRect(8 * u, 12 * u, 40 * u, 17 * u, p)
-                Glyph.HD -> { p.textSize = 13 * u; p.textAlign = Paint.Align.CENTER; p.typeface = Typeface.DEFAULT_BOLD; c.drawText("HD", 24 * u, 29 * u, p) }
-                Glyph.AA -> {  // a screen with a play shape, on a stand
-                    p.color = play
-                    c.drawPath(android.graphics.Path().apply { moveTo(20 * u, 16 * u); lineTo(31 * u, 24 * u); lineTo(20 * u, 32 * u); close() }, p)
-                    p.color = color; p.style = Paint.Style.STROKE; c.drawLine(16 * u, 45 * u, 32 * u, 45 * u, p)
-                }
-                else -> {}
-            }
+            p.style = Paint.Style.FILL; p.color = if (running) AA_BLUE else AA_GREY; c.drawCircle(24 * u, 24 * u, 22 * u, p)
+            p.style = Paint.Style.STROKE; p.strokeWidth = 5 * u; p.color = if (running) WHITE else 0xFF9AA0A6.toInt()
+            c.drawPath(android.graphics.Path().apply { moveTo(14 * u, 33 * u); lineTo(24 * u, 13 * u); lineTo(34 * u, 33 * u) }, p)  // the "A" road arrow
         }
+        private companion object { const val AA_BLUE = 0xFF1A73E8.toInt(); const val AA_GREY = 0xFF3C4043.toInt() }
     }
 
 }

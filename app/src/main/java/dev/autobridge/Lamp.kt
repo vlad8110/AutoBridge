@@ -6,7 +6,9 @@ import android.content.Context
 import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.graphics.LinearGradient
 import android.graphics.RectF
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
@@ -61,10 +63,18 @@ class LampDrawable(private val cut: Float, private val k: Float) : Drawable() {
     override fun draw(c: Canvas) {
         val b = bounds
         shape.bounds = b; shape.draw(c)
-        lamp.set(b.left + 12 * k, b.bottom - 18 * k, b.right - 12 * k, b.bottom - 10 * k)
-        if (on) { glow.color = 0x99FF2A45.toInt(); c.drawRoundRect(lamp, 3 * k, 3 * k, glow) }
-        p.style = Paint.Style.FILL; p.color = if (on) LAMP_ON else LAMP_OFF; c.drawRoundRect(lamp, 3 * k, 3 * k, p)
+        lamp.set(b.left + 12 * k, b.bottom - 16 * k, b.right - 12 * k, b.bottom - 11 * k)
+        if (on) { glow.color = 0x66FF2A45; c.drawRoundRect(lamp, 2.5f * k, 2.5f * k, glow) }
+        val color = if (on) LAMP_ON else LAMP_OFF
+        if (color != shaded) {  // a real lamp dims where its curved lens turns away at each end
+            val dim = (color and 0xFFFFFF) or 0x55000000
+            p.shader = LinearGradient(0f, 0f, 1f, 0f, intArrayOf(dim, color, color, dim), floatArrayOf(0f, 0.2f, 0.8f, 1f), Shader.TileMode.CLAMP)
+            shaded = color
+        }
+        p.shader?.setLocalMatrix(android.graphics.Matrix().apply { setScale(lamp.width(), 1f); postTranslate(lamp.left, 0f) })
+        p.style = Paint.Style.FILL; c.drawRoundRect(lamp, 2.5f * k, 2.5f * k, p)
     }
+    private var shaded = 0
 
     override fun setAlpha(alpha: Int) {}
     override fun setColorFilter(cf: android.graphics.ColorFilter?) {}
@@ -72,7 +82,7 @@ class LampDrawable(private val cut: Float, private val k: Float) : Drawable() {
 
     companion object {
         const val LAMP_OFF = 0xFF2B0A0F.toInt()
-        const val LAMP_ON = 0xFFFF2A45.toInt()
+        const val LAMP_ON = 0xFFE8243C.toInt()  // a tad below full red
     }
 }
 
