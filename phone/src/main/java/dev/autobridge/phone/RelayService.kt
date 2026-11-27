@@ -30,6 +30,7 @@ class RelayService : Service() {
         const val SETUP_PORT = 5303  // must match Wireless.PHONE_SETUP_PORT in the car app
         /** As the truck's FIRST_PING_MS: room for a slow search for the phone on the hotspot. */
         private const val AA_WAIT_MS = 60_000L
+        private const val AA_GRACE_MS = 2_500L
         /** The status line when a session starts. */
         const val RUNNING = "Android Auto is running through the truck"
         /** True while Android Auto runs through the relay (the app's headline; a status line can scroll out of the history). */
@@ -148,6 +149,17 @@ class RelayService : Service() {
 
     /** Only a truck that proves it knows the pairing code (until one is typed: a saved hotspot password) reaches Android Auto. */
     private fun pair(s: Socket) {
+        // Two phones on the hotspot: only the one whose Android Auto the truck just started over Bluetooth has
+        // Android Auto waiting here. The other stays quiet, so the truck's search finds the right phone. If the truck
+        // beats Android Auto by a moment, this waits for it (under the truck's 3 s pairing timeout).
+        fun aaWaiting() = synchronized(lock) { waitingAa != null && android.os.SystemClock.elapsedRealtime() - waitingAaSince <= AA_WAIT_MS }
+        val until = android.os.SystemClock.elapsedRealtime() + AA_GRACE_MS
+        while (!aaWaiting() && android.os.SystemClock.elapsedRealtime() < until) Thread.sleep(50)
+        if (!aaWaiting()) {
+            runCatching { s.close() }
+            Log.i("AutoBridgePhone", "the truck asked, but Android Auto isn't starting on this phone; left it for the other phone")
+            return
+        }
         val code = WifiDetails.pairCode(this)
         val passwords = WifiDetails.savedPasswords(this)
         val ok = (code != null || passwords.isNotEmpty()) && try {
