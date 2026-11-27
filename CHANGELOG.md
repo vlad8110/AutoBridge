@@ -3,7 +3,7 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
-## 0.8.13 (in progress, not released)
+## 0.8.13 (November 27, 2026, truck app only)
 - Equalizer faders redesigned ("Ribbed"): about 15% smaller, truly black caps with fine vertical ribs that catch the light only at their tops, and a short dull red slit in the middle instead of the bright lamp.
 
 ## 0.8.12 (November 27, 2026, truck app only)
