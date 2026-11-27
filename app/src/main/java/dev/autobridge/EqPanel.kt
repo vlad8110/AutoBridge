@@ -249,29 +249,27 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
         private val capBody = Path(); private val capSlot = RectF(); private var capFor = 0
         private val capFill = Paint(Paint.ANTI_ALIAS_FLAG); private val lampFill = Paint(Paint.ANTI_ALIAS_FLAG)
         private fun cap(c: Canvas, cx: Float, cy: Float) {
-            val w = 140f * k; val h = 38f * k; val cut = 7f * k
+            val w = 119f * k; val h = 32f * k; val cut = 6f * k  // 15% smaller than 0.8.12
             if (capFor != width) {  // shapes in the cap's own coordinates, made once per size
                 capFor = width
                 capBody.reset(); capBody.moveTo(-w / 2 + cut, -h / 2); capBody.lineTo(w / 2 - cut, -h / 2); capBody.lineTo(w / 2, -h / 2 + cut)
                 capBody.lineTo(w / 2, h / 2 - cut); capBody.lineTo(w / 2 - cut, h / 2); capBody.lineTo(-w / 2 + cut, h / 2)
                 capBody.lineTo(-w / 2, h / 2 - cut); capBody.lineTo(-w / 2, -h / 2 + cut); capBody.close()
-                capFill.shader = android.graphics.LinearGradient(0f, -h / 2, 0f, h / 2, intArrayOf(0xFF1C1C1D.toInt(), 0xFF0C0C0D.toInt(), 0xFF050505.toInt()), floatArrayOf(0f, 0.45f, 1f), android.graphics.Shader.TileMode.CLAMP)
+                capFill.shader = android.graphics.LinearGradient(0f, -h / 2, 0f, h / 2, intArrayOf(0xFF0A0A0A.toInt(), 0xFF000000.toInt(), 0xFF000000.toInt()), floatArrayOf(0f, 0.3f, 1f), android.graphics.Shader.TileMode.CLAMP)
                 capSlot.set(-w * 0.27f, -h * 0.14f, w * 0.27f, h * 0.14f)
-                lampFill.shader = android.graphics.RadialGradient(0f, 0f, w * 0.27f, intArrayOf(0xFFE36C44.toInt(), 0xFF8D281D.toInt(), 0xFF5B1812.toInt(), 0xFF31090A.toInt(), 0xFF160203.toInt()), floatArrayOf(0f, 0.12f, 0.3f, 0.6f, 1f), android.graphics.Shader.TileMode.CLAMP)
+                lampFill.shader = android.graphics.RadialGradient(0f, 0f, w * 0.27f, intArrayOf(0xFF9E4A30.toInt(), 0xFF6A1E16.toInt(), 0xFF42110D.toInt(), 0xFF24070A.toInt(), 0xFF100203.toInt()), floatArrayOf(0f, 0.12f, 0.3f, 0.6f, 1f), android.graphics.Shader.TileMode.CLAMP)
             }
             c.save(); c.translate(cx, cy)
             c.drawPath(capBody, capFill)
-            p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * k; p.color = 0xFF3C3D40.toInt(); c.drawPath(capBody, p)  // machined edge
-            p.strokeWidth = 1.5f * k
-            for (gy in floatArrayOf(-0.36f, -0.24f, 0.24f, 0.36f)) {  // grip grooves: dark line with a light lip under it
-                p.color = 0xFF050506.toInt(); c.drawLine(-w / 2 + cut, gy * h, w / 2 - cut, gy * h, p)
-                p.color = 0xFF202124.toInt(); c.drawLine(-w / 2 + cut, gy * h + 1.5f * k, w / 2 - cut, gy * h + 1.5f * k, p)
-            }
-            p.style = Paint.Style.FILL; p.color = 0xFF050506.toInt()
+            // Black, not grey: only a faint edge so the shape reads, and barely-there grip grooves.
+            p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f * k; p.color = 0xFF222222.toInt(); c.drawPath(capBody, p)
+            p.strokeWidth = 1.2f * k; p.color = 0xFF151515.toInt()
+            for (gy in floatArrayOf(-0.34f, -0.22f, 0.22f, 0.34f)) c.drawLine(-w / 2 + cut, gy * h, w / 2 - cut, gy * h, p)
+            p.style = Paint.Style.FILL; p.color = 0xFF000000.toInt()
             c.drawRoundRect(capSlot.left - 2 * k, capSlot.top - 2 * k, capSlot.right + 2 * k, capSlot.bottom + 2 * k, h, h, p)
             lampFill.alpha = if (dim) 0x55 else 0xFF
             c.drawRoundRect(capSlot, h, h, lampFill)
-            p.style = Paint.Style.FILL; p.color = if (dim) 0x14FF7A50 else 0x40FF7A50  // a small hot spot in the lens; the rest stays dark, like smoked glass
+            p.style = Paint.Style.FILL; p.color = if (dim) 0x0CFF7A50 else 0x20FF7A50  // a faint hot spot in the lens; the rest stays dark, like smoked glass
             c.drawOval(-w * 0.05f, -h * 0.04f, w * 0.05f, h * 0.04f, p)
             c.restore()
         }
