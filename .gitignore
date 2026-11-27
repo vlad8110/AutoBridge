@@ -10,3 +10,4 @@ native/build-deps.log
 build*.log
 local-builds/
 truck-logs/
+TODO.md
