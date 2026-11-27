@@ -28,6 +28,8 @@ class RelayService : Service() {
         const val LOG_PORT = 5301  // must match Wireless.PHONE_LOG_PORT in the car app
         const val LOG_REQUEST_PORT = 5302  // must match Wireless.PHONE_LOG_REQUEST_PORT in the car app
         const val SETUP_PORT = 5303  // must match Wireless.PHONE_SETUP_PORT in the car app
+        /** As the truck's FIRST_PING_MS: room for a slow search for the phone on the hotspot. */
+        private const val AA_WAIT_MS = 60_000L
         /** The status line when a session starts. */
         const val RUNNING = "Android Auto is running through the truck"
         /** True while Android Auto runs through the relay (the app's headline; a status line can scroll out of the history). */
@@ -54,6 +56,7 @@ class RelayService : Service() {
 
     private val lock = Any()
     private var waitingAa: Socket? = null
+    private var waitingAaSince = 0L
     private var waitingCar: Socket? = null
     @Volatile private var running = true
     private val servers = mutableListOf<ServerSocket>()
@@ -122,8 +125,15 @@ class RelayService : Service() {
     /** Holds whichever side arrives first; a newer socket replaces an older waiting one (car sockets are paired first). */
     private fun offer(aa: Socket? = null, car: Socket? = null) {
         val pair = synchronized(lock) {
-            aa?.let { waitingAa?.close(); waitingAa = it }
+            aa?.let { waitingAa?.close(); waitingAa = it; waitingAaSince = android.os.SystemClock.elapsedRealtime() }
             car?.let { waitingCar?.close(); waitingCar = it }
+            // Any app on this phone can connect here, not just Android Auto (nothing tells them apart), but Android Auto
+            // connects only once the truck has invited it, seconds before the truck arrives. A connection parked here
+            // longer is dropped, so a stray app can't sit waiting to be handed the truck.
+            if (waitingAa != null && android.os.SystemClock.elapsedRealtime() - waitingAaSince > AA_WAIT_MS) {
+                runCatching { waitingAa?.close() }; waitingAa = null
+                Log.i("AutoBridgePhone", "dropped a connection to the Android Auto port that waited too long for the truck")
+            }
             val a = waitingAa ?: return
             val c = waitingCar ?: return
             waitingAa = null
@@ -136,17 +146,21 @@ class RelayService : Service() {
         pipe(pair.first, pair.second, pair.third)
     }
 
-    /** Only a truck that proves it knows a saved hotspot password reaches Android Auto. */
+    /** Only a truck that proves it knows the pairing code (until one is typed: a saved hotspot password) reaches Android Auto. */
     private fun pair(s: Socket) {
+        val code = WifiDetails.pairCode(this)
         val passwords = WifiDetails.savedPasswords(this)
-        val ok = passwords.isNotEmpty() && try {
+        val ok = (code != null || passwords.isNotEmpty()) && try {
             s.soTimeout = 5000
-            Pairing.phone(s, passwords) != null
+            Pairing.phone(s, code, passwords) != null
         } catch (_: IOException) { false }
         if (!ok) {
             runCatching { s.close() }
-            return say(if (passwords.isEmpty()) "The truck connected, but no hotspot password is saved here: tap Password"
-                       else "Ignored a connection from ${s.inetAddress?.hostAddress}: it doesn't know a saved hotspot password")
+            return say(when {
+                code == null && passwords.isEmpty() -> "The truck connected, but no pairing code is saved here: tap Pairing code"
+                code != null -> "Ignored a connection from ${s.inetAddress?.hostAddress}: it doesn't know the pairing code"
+                else -> "Ignored a connection from ${s.inetAddress?.hostAddress}: it doesn't know a saved hotspot password"
+            })
         }
         s.soTimeout = 0
         say("The truck connected")
@@ -155,18 +169,22 @@ class RelayService : Service() {
 
     /** A truck without Wi-Fi details asks for the hotspot we're on; only answered once its password is saved here. */
     private fun sendSetup(s: Socket) = s.use {
+        // A truck first sends a nonce; the answer is then signed with the pairing code, so the truck can tell it's us.
+        val nonce = runCatching { it.soTimeout = 3000; ByteArray(16).also { b -> java.io.DataInputStream(it.getInputStream()).readFully(b) } }.getOrNull()
+        val code = WifiDetails.pairCode(this)
         val located = checkSelfPermission(android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
         val now = runCatching { WifiDetails.current(getSystemService(android.net.wifi.WifiManager::class.java)) }.getOrNull()
         val d = WifiDetails.pick(now, WifiDetails.remembered(this))
         val (message, note) = WifiDetails.setupReply(located || d != null, d, d?.let { WifiDetails.password(this, it.ssid) })
-        runCatching { it.getOutputStream().write(message.toByteArray()) }  // the truck shows the error line to the owner
+        val signed = if (code != null && nonce != null) Pairing.signSetup(code, nonce, message) else message
+        runCatching { it.getOutputStream().write(signed.toByteArray()) }  // the truck shows the error line to the owner
         say(note)
     }
 
     private fun saveLog(s: Socket) = s.use {
         try {
             it.soTimeout = 15_000
-            val name = LogSaver.receive(this, it.getInputStream())
+            val name = LogSaver.receive(this, it.getInputStream(), WifiDetails.pairCode(this))
             it.getOutputStream().write('K'.code)  // tells the car it's saved
             say("Saved the car's log: $name")
             saved(screenshot = name.endsWith(".png"))

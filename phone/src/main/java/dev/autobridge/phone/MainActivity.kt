@@ -30,6 +30,7 @@ class MainActivity : Activity() {
     private lateinit var headline: TextView
     private lateinit var subline: TextView
     private lateinit var passwordButton: TextView
+    private lateinit var codeButton: TextView
     private lateinit var detailsText: TextView
     private lateinit var activityText: TextView
     private lateinit var logText: TextView
@@ -77,8 +78,12 @@ class MainActivity : Activity() {
         // The one loud thing: the status line, big and coloured, readable from across the cab.
         headline = text(30f, light = true)
         subline = text(15f, MUTED).apply { setPadding(0, dp(6), 0, 0) }
-        passwordButton = button("Hotspot password") { editPassword() }.also { it.layoutParams = lp(16) }
-        val statusPanel = panel(headline, subline, passwordButton)
+        passwordButton = button("Hotspot password") { editPassword() }
+        codeButton = button("Pairing code") { editCode() }
+        val statusPanel = panel(headline, subline, LinearLayout(this).apply {
+            addView(passwordButton, LinearLayout.LayoutParams(0, -2, 1f))
+            addView(codeButton, LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = dp(10) })
+        }.also { it.layoutParams = lp(16) })
         detailsText = text(13f, MUTED, mono = true).apply { setLineSpacing(dp(3).toFloat(), 1f) }
         activityText = text(12f, LIGHT, mono = true).apply { setLineSpacing(dp(4).toFloat(), 1f) }
         logText = text(13f, MUTED)
@@ -156,10 +161,14 @@ class MainActivity : Activity() {
         val d = details
         val pwSaved = d?.let { WifiDetails.password(this, it.ssid) != null } == true
         val trucks = WifiDetails.savedHotspots(this)
+        val coded = WifiDetails.pairCode(this) != null
         val (title, color, sub) = when {
             RelayService.aaRunning -> Triple("Connected to the truck", GREEN,
-                (d?.let { "${it.ssid}, " } ?: "") + if (pwSaved) "password saved" else "password not saved here")
+                (d?.let { "${it.ssid}, " } ?: "") + (if (pwSaved) "password saved" else "password not saved here") +
+                    if (coded) "" else "\nType the truck's pairing code, so no one else on the hotspot can pose as the truck.")
             wifiProblem != null -> Triple("Can't see the hotspot", AMBER, wifiProblem!!)
+            !coded && trucks.isNotEmpty() -> Triple("Add the truck's pairing code", AMBER,
+                "On the truck: Settings, Pairing code. Type it here once, so no one else on the hotspot can pose as the truck.")
             // Home or work Wi-Fi once a truck is set up: nothing to fix, so no amber.
             d != null && !pwSaved && trucks.isNotEmpty() -> Triple("Not on the truck's hotspot", WHITE,
                 "On ${d.ssid}. Join ${trucks.joinToString(" or ")} to connect.\nNew truck? Join its hotspot, then add its password.")
@@ -170,6 +179,7 @@ class MainActivity : Activity() {
         }
         headline.text = title; headline.setTextColor(color); subline.text = sub
         passwordButton.visibility = if (d != null) View.VISIBLE else View.GONE  // nothing to save it for until the hotspot shows
+        codeButton.text = if (coded) "Pairing code ✓" else "Pairing code"
         activityText.text = events().takeLast(3).joinToString("\n")
     }
 
@@ -259,6 +269,37 @@ class MainActivity : Activity() {
                     val pw = field.text.toString()
                     if (pw.length !in 8..63) error.text = "⚠ A hotspot password is 8 to 63 characters."
                     else { WifiDetails.setPassword(this@MainActivity, d.ssid, pw); dialog.dismiss(); showWifi() }
+                })
+            },
+        ).apply { setPadding(dp(22), dp(22), dp(22), dp(18)) })
+        dialog.window?.apply {
+            setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0)); setDimAmount(0.8f)
+            setLayout((resources.displayMetrics.widthPixels * 0.9f).toInt(), android.view.ViewGroup.LayoutParams.WRAP_CONTENT)
+        }
+        dialog.show()
+    }
+
+    /** The code the truck shows in Settings; typed once, it replaces the hotspot password for proving who's who. */
+    private fun editCode() {
+        val field = android.widget.EditText(this).apply {
+            setText(WifiDetails.pairCode(context) ?: ""); textSize = 22f; setTextColor(WHITE); setSingleLine(); typeface = Typeface.MONOSPACE
+            backgroundTintList = android.content.res.ColorStateList.valueOf(OUTLINE); hint = "XXXX-XXXX-XXXX"; setHintTextColor(DIM)
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS or android.text.InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+        }
+        val error = text(13f)
+        val dialog = android.app.Dialog(this)
+        dialog.setContentView(panel(
+            text(24f).apply { text = "Pairing code" },
+            text(14f, MUTED).apply { text = "On the truck: AutoBridge Settings, Pairing code. Capitals or not, dashes or not."; setPadding(0, dp(8), 0, dp(14)) },
+            field, error,
+            LinearLayout(this).apply {
+                setPadding(0, dp(18), 0, 0)
+                addView(button("Cancel") { dialog.dismiss() })
+                addView(View(context), LinearLayout.LayoutParams(0, 1, 1f))
+                addView(button("Save", bold = true) {
+                    val code = Pairing.normalize(field.text.toString())
+                    if (code == null) error.text = "⚠ The code is 12 letters and numbers, as the truck shows it."
+                    else { WifiDetails.setPairCode(this@MainActivity, code); dialog.dismiss(); render() }
                 })
             },
         ).apply { setPadding(dp(22), dp(22), dp(22), dp(18)) })

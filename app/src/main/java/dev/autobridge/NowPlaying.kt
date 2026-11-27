@@ -111,6 +111,19 @@ class MediaService : MediaBrowserService() {
         super.onCreate()
         sessionToken = NowPlaying.session(this).sessionToken
     }
-    override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?) = BrowserRoot("root", null)
+    /**
+     * Only the truck's own apps (media card, source switcher, dashboard) may control the music: another installed app
+     * could otherwise pause or skip it. An app that can't be looked up is let in and logged, so GM's media card can't
+     * be locked out by a lookup that fails on this truck.
+     */
+    override fun onGetRoot(clientPackageName: String, clientUid: Int, rootHints: Bundle?): BrowserRoot? {
+        // Our own uid, or a system uid in any driver profile (uid = profile * 100000 + app id).
+        if (clientUid == android.os.Process.myUid() || clientUid % 100_000 < android.os.Process.FIRST_APPLICATION_UID) return BrowserRoot("root", null)
+        val flags = runCatching { packageManager.getApplicationInfo(clientPackageName, 0).flags }
+            .getOrElse { android.util.Log.w("AutoBridge", "media: can't look up $clientPackageName; letting it in"); return BrowserRoot("root", null) }
+        if (flags and (android.content.pm.ApplicationInfo.FLAG_SYSTEM or android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP) != 0) return BrowserRoot("root", null)
+        android.util.Log.i("AutoBridge", "media: refused $clientPackageName (not one of the truck's own apps)")
+        return null
+    }
     override fun onLoadChildren(parentId: String, result: Result<MutableList<MediaBrowser.MediaItem>>) = result.sendResult(mutableListOf())
 }

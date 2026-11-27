@@ -35,6 +35,23 @@ class LogSaverTest {
     }
 }
 
+class SealedLogTest {
+    private val code = "K7QM-3XRP-9TWD"
+
+    @Test fun withAPairingCodeOnlyAnEncryptedLogIsTaken() {
+        val sealedHeader = "AUTOBRIDGE-LOG2\nlog.txt\n${20 * 1024 * 1024 + Pairing.SEAL_EXTRA}\n"
+        assertEquals("log.txt" to 20 * 1024 * 1024 + Pairing.SEAL_EXTRA, LogSaver.header(sealedHeader.byteInputStream(), code))
+        // Plain (anyone on the hotspot could send it) is refused once a code is saved, and LOG2 without one.
+        assertEquals(true, runCatching { LogSaver.header("AUTOBRIDGE-LOG\nlog.txt\n1\n".byteInputStream(), code) }.isFailure)
+        assertEquals(true, runCatching { LogSaver.header(sealedHeader.byteInputStream(), null) }.isFailure)
+    }
+
+    @Test fun theTrucksSealOpensHere() {
+        val log = "hello".toByteArray()
+        assertEquals("hello", Pairing.open(code, "log.txt", Pairing.seal(code, "log.txt", log)).decodeToString())
+    }
+}
+
 class SetupMessageTest {
     @Test fun matchesWhatTheTruckParses() {
         // Same text as SetupMessageTest in the car app expects.

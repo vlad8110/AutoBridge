@@ -302,17 +302,30 @@ class BridgeService : Service() {
 
     private fun checkWifi(quiet: Boolean): Boolean = synchronized(wifiCheckLock) {
         val car = carIp() ?: return false.also { if (!quiet) { lastCheck = "Wi-Fi check: the truck's hotspot is off"; say(lastCheck!!) } }
+        val s = Settings(this)
+        val saved = s.wifi()
+        // Once a phone has paired by code, only an answer signed with the code may be trusted: any device on the
+        // hotspot could answer first with its own details. A brand-new truck has nothing to check against yet.
+        val signedOnly = saved != null && s.pairedByCode
+        val code = s.pairCode
+        val replies = java.util.concurrent.ConcurrentHashMap<Socket, String>()
+        val ask = { so: Socket ->
+            so.soTimeout = 5000
+            val nonce = Pairing.nonce()
+            so.getOutputStream().apply { write(nonce); flush() }
+            val (body, signed) = Pairing.checkSetup(code, nonce, so.getInputStream().readBytes().decodeToString())
+            (signed || !signedOnly).also { if (it) replies[so] = body }
+        }
         val pool = java.util.concurrent.Executors.newFixedThreadPool(64)
         val reply = try {
             val known = phoneIp?.let { ip -> Socket().let { so ->
-                try { so.bind(InetSocketAddress(car, 0)); so.connect(InetSocketAddress(ip, Wireless.PHONE_SETUP_PORT), 700); so }
+                try { so.bind(InetSocketAddress(car, 0)); so.connect(InetSocketAddress(ip, Wireless.PHONE_SETUP_PORT), 700); so.takeIf { ask(it) } ?: run { so.close(); null } }
                 catch (_: IOException) { so.close(); null } } }
-            (known ?: sweep(pool, car, Wireless.PHONE_SETUP_PORT))?.use { it.soTimeout = 5000; it.getInputStream().readBytes().decodeToString() }
+            (known ?: sweep(pool, car, Wireless.PHONE_SETUP_PORT) { ask(it) })?.use { replies[it] }
         } finally { pool.shutdownNow() }
         if (reply == null && quiet) return false
-        val s = Settings(this)
-        val saved = s.wifi()
         val (found, checked) = Wireless.checkSetup(reply, saved)
+            .let { if (reply == null && signedOnly) it.first to "Wi-Fi check: no answer signed with this truck's pairing code. Is AutoBridge Phone open on the hotspot, with the pairing code (Settings) typed in?" else it }
         // Only TEST or a brand-new truck may change saved details: on its own, a check could be answered by any
         // device on the hotspot pretending to be the phone.
         val fix = found?.takeIf { !quiet || saved == null }
@@ -334,19 +347,26 @@ class BridgeService : Service() {
     private fun connectToPhone(carIp: String) {
         if (handle != 0L) return  // already running; a dead session is ended by the watchdog within 5 s, then the phone is invited again
         val password = prefs.wifi()?.password ?: return
+        val code = prefs.pairCode
         if (!searching.compareAndSet(false, true)) return
         val pool = java.util.concurrent.Executors.newFixedThreadPool(64)
         try {
             say("Looking for the AutoBridge Phone app on the hotspot…")
             repeat(15) {
-                // Only the phone app that knows the hotspot password: anyone else on the hotspot could answer first.
+                // Only the phone app that knows the pairing code (or, until a phone has paired by code, the hotspot
+                // password): anyone else on the hotspot could answer first.
+                var by = Pairing.Result.REFUSED
                 val socket = sweep(pool, carIp, Wireless.PHONE_CAR_PORT) { s ->
                     s.soTimeout = 3000
-                    Pairing.truck(s, password).also { s.soTimeout = 0 }
+                    val r = Pairing.truck(s, code, password, byPassword = !prefs.pairedByCode)
+                    s.soTimeout = 0
+                    if (r != Pairing.Result.REFUSED) by = r
+                    r != Pairing.Result.REFUSED
                 }
                 if (socket != null) {
                     phoneIp = socket.inetAddress.hostAddress
-                    say("Found phone at $phoneIp")
+                    if (by == Pairing.Result.CODE) prefs.pairedByCode = true
+                    say("Found phone at $phoneIp" + if (by == Pairing.Result.PASSWORD) ". Type the pairing code from Settings into AutoBridge Phone to lock this truck to it" else "")
                     // The log-request line may be dead (Wi-Fi dropped, or a new address): reconnect it now.
                     runCatching { logLine?.close() }
                     socket.tcpNoDelay = true
@@ -357,7 +377,8 @@ class BridgeService : Service() {
                 }
                 Thread.sleep(1000)
             }
-            say("Phone app not found. Is AutoBridge Phone 0.8.1 or newer running on the phone, with the hotspot password saved (Password)?")
+            say(if (prefs.pairedByCode) "Phone app not found. Is AutoBridge Phone running, with this truck's pairing code (Settings) typed in?"
+                else "Phone app not found. Is AutoBridge Phone running, with the hotspot password saved or the pairing code (Settings) typed in?")
         } finally {
             pool.shutdownNow()
             searching.set(false)
@@ -495,7 +516,7 @@ class BridgeService : Service() {
                 if (png == null) return@grab say("Screenshot failed")
                 thread(name = "ab-shot") {
                     val name = Logs.name("screen").removeSuffix(".txt") + ".png"
-                    try { Logs.send(ip, carIp(), name, png); say("Screenshot saved on the phone: $name") }
+                    try { Logs.send(ip, carIp(), name, png, sealCode()); say("Screenshot saved on the phone: $name") }
                     catch (e: IOException) { say("Screenshot not sent: ${e.message}") }
                 }
             }
@@ -526,13 +547,16 @@ class BridgeService : Service() {
                 "---- truck data (every value the truck lets AutoBridge read) ----",
             ) + (runCatching { (car!!.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager).let { TruckProbe.dump(it) + TruckProbe.hidden(it) } }.getOrElse { listOf("no car service: $it") })
             try {
-                Logs.send(ip, carIp(), name, Logs.collect(this, reason, header))
+                Logs.send(ip, carIp(), name, Logs.collect(this, reason, header), sealCode())
                 say("Log saved on the phone: $name")
             } catch (e: IOException) {
                 say("Couldn't send the log to the phone: ${e.message}")
             }
         }
     }
+
+    /** Logs and screenshots are encrypted with the pairing code once the phone has it (it then refuses plain ones). */
+    private fun sealCode() = Settings(this).let { if (it.pairedByCode) it.pairCode else null }
 
     fun touch(action: Int, index: Int, ids: IntArray, xs: IntArray, ys: IntArray) {
         handle.takeIf { it != 0L }?.let { Native.touch(it, action, index, ids, xs, ys) }
@@ -722,6 +746,11 @@ class Settings(private val context: Context) {
     /** The owner's saved EQs (EQ 1..3 on the EQ page), as [Equalizer.encode]; null while empty. */
     fun eqSlot(n: Int): String? = p.getString("eqSlot$n", null)
     fun setEqSlot(n: Int, gains: String) = p.edit().putString("eqSlot$n", gains).apply()
+
+    /** This truck's pairing code, made once and kept (settings page; typed into AutoBridge Phone). */
+    val pairCode: String get() = p.getString("pairCode", null) ?: Pairing.newCode().also { p.edit().putString("pairCode", it).commit() }
+    /** Set the first time a phone pairs by code: from then on the hotspot password alone is refused. */
+    var pairedByCode: Boolean get() = p.getBoolean("pairedByCode", false); set(v) = p.edit().putBoolean("pairedByCode", v).apply()
 
     fun forget() = p.edit().remove("ssid").remove("password").remove("bssid").apply()
 

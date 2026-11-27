@@ -107,15 +107,19 @@ object Logs {
     /** Two files of this size at most: about 4 MB, several hours of driving. */
     private const val MAX_BYTES = 2L * 1024 * 1024
 
-    /** Header, name line, length line, then the file. Must match LogReceiver in the phone app. */
+    /**
+     * Header, name line, length line, then the file. With the pairing [code] it goes encrypted ("AUTOBRIDGE-LOG2"),
+     * since anyone on the hotspot could record it. Must match LogSaver in the phone app.
+     */
     @Throws(IOException::class)
-    fun send(phoneIp: String, carIp: String?, name: String, bytes: ByteArray) {
+    fun send(phoneIp: String, carIp: String?, name: String, plain: ByteArray, code: String?) {
+        val bytes = code?.let { Pairing.seal(it, name, plain) } ?: plain
         Socket().use { s ->
             carIp?.let { s.bind(InetSocketAddress(it, 0)) }  // leave through the hotspot
             s.connect(InetSocketAddress(phoneIp, Wireless.PHONE_LOG_PORT), 3000)
             s.soTimeout = 10_000
             val out = s.getOutputStream()
-            out.write("AUTOBRIDGE-LOG\n$name\n${bytes.size}\n".toByteArray())
+            out.write("${if (code != null) "AUTOBRIDGE-LOG2" else "AUTOBRIDGE-LOG"}\n$name\n${bytes.size}\n".toByteArray())
             out.write(bytes)
             out.flush()
             if (s.getInputStream().read() != 'K'.code) throw IOException("the phone app did not confirm")

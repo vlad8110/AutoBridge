@@ -28,6 +28,14 @@ data class WifiDetails(val ssid: String, val bssid: String, val frequencyMhz: In
             context.getSharedPreferences("hotspots", android.content.Context.MODE_PRIVATE).all.keys
         fun savedPasswords(context: android.content.Context): List<String> =
             context.getSharedPreferences("hotspots", android.content.Context.MODE_PRIVATE).all.values.filterIsInstance<String>().filter { it.isNotEmpty() }
+        /**
+         * The truck's pairing code, typed once (the truck shows it in Settings); null until then.
+         * shortcut: one code per phone, so a second truck replaces the first; keep one per truck if anyone pairs two.
+         */
+        fun pairCode(context: android.content.Context): String? =
+            context.getSharedPreferences("pairing", android.content.Context.MODE_PRIVATE).getString("code", null)
+        fun setPairCode(context: android.content.Context, code: String) =
+            context.getSharedPreferences("pairing", android.content.Context.MODE_PRIVATE).edit().putString("code", code).apply()
         fun setPassword(context: android.content.Context, ssid: String, password: String) =
             context.getSharedPreferences("hotspots", android.content.Context.MODE_PRIVATE).edit().putString(ssid, password).apply()
 
