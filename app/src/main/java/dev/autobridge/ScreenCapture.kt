@@ -67,5 +67,8 @@ object ScreenCapture {
     fun stop() {
         runCatching { display?.release() }; runCatching { reader?.close() }; runCatching { projection?.stop() }
         display = null; reader = null; projection = null
+        // Once the capture ends, asking for the mediaProjection type again is refused, and that refusal would also drop
+        // the microphone and location types the same call asks for.
+        BridgeService.instance?.projecting = false
     }
 }
