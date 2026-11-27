@@ -415,7 +415,7 @@ class BridgeService : Service() {
         audio.holdFocus()
         NowPlaying.connected(this)
         startedAt = System.currentTimeMillis(); pinged = false
-        handle = Native.start(fd, plan.toArray(), truck.toArray(), gpsAllowed(), Callbacks(++sessionId, plan))
+        handle = Native.start(fd, plan.toArray(), truck.toArray(), gpsAllowed(), prefs.aaHidden, carInfo, Callbacks(++sessionId, plan))
         main.removeCallbacks(watchdog); main.postDelayed(watchdog, 2000)
         watchGps()
         Log.i(TAG, "video offered: ${if (plan.hevc) "H.265" else "H.264"} " + plan.configs.joinToString { "${it.codecW}x${it.codecH}" } +
@@ -582,8 +582,17 @@ class BridgeService : Service() {
             val ux = car!!.getCarManager(Car.CAR_UX_RESTRICTION_SERVICE) as CarUxRestrictionsManager
             moving = ux.currentCarUxRestrictions.isRequiresDistractionOptimization
             ux.registerListener { r -> moving = r.isRequiresDistractionOptimization; pushSensors(); main.post { onMoving?.invoke(moving) } }
-            (car!!.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager).let { watchTruck(it); TruckProbe.record(it) }
+            (car!!.getCarManager(Car.PROPERTY_SERVICE) as CarPropertyManager).let { watchTruck(it); TruckProbe.record(it); carInfo = readCarInfo(it) }
         }.onFailure { Log.w(TAG, "no car service; reporting moving so driving limits stay on", it) }
+    }
+
+    /** The truck's make, model and year for Android Auto ("" for any it won't share: AutoBridge's own then). */
+    @Volatile private var carInfo = arrayOf("", "", "")
+
+    private fun readCarInfo(props: CarPropertyManager): Array<String> {
+        fun read(id: Int) = runCatching { props.getProperty<Any>(id, 0).value?.toString()?.trim() ?: "" }.getOrDefault("")
+        return arrayOf(read(VehiclePropertyIds.INFO_MAKE), read(VehiclePropertyIds.INFO_MODEL), read(VehiclePropertyIds.INFO_MODEL_YEAR))
+            .also { Log.i(TAG, "truck for Android Auto: ${it.joinToString(" ").ifBlank { "not shared" }}") }
     }
 
     /** Battery, range, speed, gear and parking brake. Whatever the truck refuses simply stays unknown. */
@@ -660,6 +669,12 @@ class BridgeService : Service() {
 
 /** Wi-Fi details the phone is given (the car's own hotspot). */
 class Settings(private val context: Context) {
+    companion object {
+        // Android Auto's session_configuration bits (ServiceDiscoveryResponse field 13)
+        const val HIDE_CLOCK = 1
+        const val HIDE_SIGNAL = 2
+        const val HIDE_BATTERY = 4
+    }
     private val p = context.getSharedPreferences("autobridge", Context.MODE_PRIVATE)
     var ssid: String get() = p.getString("ssid", "")!!; set(v) = p.edit().putString("ssid", v.trim()).apply()
     var password: String get() = p.getString("password", "")!!; set(v) = p.edit().putString("password", v).apply()
@@ -671,6 +686,11 @@ class Settings(private val context: Context) {
     private val shape get() = "${if (barEnabled) "bar" else ""}${if (statusBarShown) "status" else ""}"
     var viewW: Int get() = p.getInt("viewW.$shape", p.getInt("viewW", 0)); set(v) = p.edit().putInt("viewW.$shape", v).apply()
     var viewH: Int get() = p.getInt("viewH.$shape", p.getInt("viewH", 0)); set(v) = p.edit().putInt("viewH.$shape", v).apply()
+    /** Android Auto's density for this bar combination (settings page); 0 = the truck's own, so Android Auto's text
+     *  matches the truck's. Lower shows more (more cards), higher shows bigger and fewer. */
+    var aaDpi: Int get() = p.getInt("aaDpi.$shape", 0); set(v) { p.edit().putInt("aaDpi.$shape", v).commit() }
+    /** Android Auto status icons to hide (settings page): [HIDE_CLOCK], [HIDE_SIGNAL], [HIDE_BATTERY]. All shown by default. */
+    var aaHidden: Int get() = p.getInt("aaHidden", 0); set(v) { p.edit().putInt("aaHidden", v).commit() }
     /** H.265 failed to start in this app version; each update tries it again. */
     var hevcFailed: Boolean
         get() = p.getLong("hevcFailedIn", -1) == version

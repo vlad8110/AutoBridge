@@ -126,7 +126,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
     }
 
     /** A settings gear, white: eight teeth around a ring. */
-    private class GearView(c: Context) : View(c) {
+    class GearView(c: Context) : View(c) {
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private val tooth = RectF()
         override fun onDraw(c: Canvas) {

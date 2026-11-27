@@ -44,6 +44,8 @@ class SettingsPanel(
     private val hotspotDetail = text(26f, MUTED, mono = true).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
     private val voiceDetail = text(26f, MUTED).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
     private val tiles = mutableListOf<() -> Unit>()
+    private val iconLamps = mutableListOf<() -> Unit>()
+    private val sizeDetail = text(26f, MUTED)
     private val batteryPanel = BatteryPanel(context, k)
     private val eqPanel: EqPanel = EqPanel(context, k) { eqPanel.close(); this@SettingsPanel.close() }
 
@@ -97,6 +99,18 @@ class SettingsPanel(
                 addView(tile(Glyph.HD, "HD picture", "1440p (H.265), drops to 1080p by itself", { s.hevcEnabled }) { s.hevcEnabled = it },
                     LinearLayout.LayoutParams(0, px(168), 1f).apply { marginStart = px(22) })
             })
+            // Android Auto's density, kept separately for each truck bar / status bar combination.
+            addView(row(text(40f).apply { text = "Android Auto size" }, sizeDetail,
+                button("−") { setDpi(Display.dpi(context) - DPI_STEP) },
+                button("Auto") { s.aaDpi = 0; shapeChanged = true; refresh() },
+                button("+") { setDpi(Display.dpi(context) + DPI_STEP) }), LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(22) })
+            addView(row(text(40f).apply { text = "Android Auto icons" }, text(26f, MUTED).apply { text = "Lit: shown on Android Auto's bar" },
+                *listOf(Settings.HIDE_CLOCK to "Clock", Settings.HIDE_SIGNAL to "Signal", Settings.HIDE_BATTERY to "Battery").map { (bit, label) ->
+                    Lamp.button(context, k, label, momentary = false) { s.aaHidden = s.aaHidden xor bit; shapeChanged = true; refresh() }.apply {
+                        minWidth = px(150); setPadding(px(26), 0, px(26), px(6))
+                        iconLamps += { Lamp.lit(this, s.aaHidden and bit == 0) }
+                    }
+                }.toTypedArray()), LinearLayout.LayoutParams(-1, -2).apply { topMargin = px(22) })
             header("TRUCK HOTSPOT")
             addView(row(hotspot, hotspotDetail, button("Test") {
                 val service = BridgeService.instance ?: return@button toast("AutoBridge isn't running")
@@ -131,8 +145,10 @@ class SettingsPanel(
     fun open() { shapeAtOpen = shape(); visibility = VISIBLE; refresh(); showTruck(BridgeService.latestTruck) }
 
     /** The settings that change Android Auto's shape; a tile tapped on and back off changes nothing. */
-    private fun shape() = listOf(s.barEnabled, s.statusBarShown, s.hevcEnabled)
-    private var shapeAtOpen = emptyList<Boolean>()
+    private fun shape() = listOf<Any>(s.barEnabled, s.statusBarShown, s.hevcEnabled, s.aaDpi, s.aaHidden)
+    private var shapeAtOpen = emptyList<Any>()
+
+    private fun setDpi(dpi: Int) { s.aaDpi = dpi.coerceIn(DPI_MIN, DPI_MAX); shapeChanged = true; refresh() }
 
     /** Live truck data while the page is open. */
     fun showTruck(t: Truck) {
@@ -154,6 +170,12 @@ class SettingsPanel(
     fun refresh() {
         if (visibility != VISIBLE) return
         tiles.forEach { it() }
+        iconLamps.forEach { it() }
+        // What these bars give Android Auto, and the layout it should pick from that (the size is the last measured one).
+        val dpi = Display.dpi(context)
+        val w = s.viewW.takeIf { it > 0 }; val h = s.viewH.takeIf { it > 0 }
+        sizeDetail.text = (if (s.aaDpi > 0) "$dpi" else "Auto $dpi") +
+            (if (w != null && h != null) " · ${Display.layout(w, h, dpi)}" else "")
         hotspot.text = s.ssid.ifEmpty { "Not set" }
         hotspotDetail.text = if (s.bssid.isEmpty()) "Open AutoBridge Phone, or Edit" else "${s.bssid} · password ${if (s.password.isEmpty()) "missing" else "saved"}"
         voiceDetail.text = VoiceAssistant.status(context).removePrefix("Voice button: ").replaceFirstChar { it.uppercase() }
@@ -225,11 +247,17 @@ class SettingsPanel(
             box.contentDescription = "$title. $detail"
         }
         tiles += paint
-        box.setOnClickListener { set(!get()); shapeChanged = true; paint() }
+        box.setOnClickListener { set(!get()); shapeChanged = true; refresh() }  // the size row follows the bars
         return box
     }
 
     private enum class Glyph { BAR, STATUS, HD, EQ, AA }
+
+    private companion object {
+        const val DPI_STEP = 10
+        const val DPI_MIN = 80
+        const val DPI_MAX = 480
+    }
 
     /** A square button: icon over its label, in the truck's boxy style. */
     private fun bigButton(glyph: Glyph, label: String, momentary: Boolean = true, onClick: () -> Unit) = LinearLayout(context).apply {

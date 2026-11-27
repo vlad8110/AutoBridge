@@ -8,6 +8,10 @@ The truck app comes from the Play Store test. The phone app is on the [Releases]
 - Equalizer lights now hit on the beat: they wait for the speakers instead of showing the music about a second early.
 - Phone app: on home or work Wi-Fi it says "Not on the truck's hotspot" instead of asking for a password in amber.
 - Security: the truck and the phone app now check each other before Android Auto starts. Each proves it knows the hotspot password, so another device on the hotspot can't pose as the phone (to hear the cabin mic or see the truck's location) or as the truck (to see your phone's screen). Update both apps together: 0.8.1 won't connect to a 0.8.0 phone app or truck app. The phone app needs the hotspot password saved (Password).
+- A see-through gear sits over Android Auto: tap it for AutoBridge's settings without restarting; drag it anywhere and it stays there.
+- Settings › Display › Android Auto size: Auto (the truck's own density) or − / + to make Android Auto show more or bigger. Kept separately for each truck bar / status bar combination, with the layout it should give shown under it.
+- Settings › Display › Android Auto icons: show or hide Android Auto's clock, signal and battery. All shown by default.
+- Android Auto now sees the truck's own make, model and year instead of "AutoBridge AAOS 2025".
 - Android Auto keeps the same layout for the same settings. With the status bar hidden it sometimes came up with the map beside the cards instead of on top, until a restart: AutoBridge had measured the screen mid-change (the status bar still showing). It now remembers the size for each truck bar / status bar combination, measured only once the screen has settled.
 - Charging: the charge-port glow and battery sweep no longer pile up into a full-speed redraw; AutoBridge's screen work while idle is less than half what it was.
 - Fixed: leaving AutoBridge's screen while the picture was starting could crash the app and drop Android Auto. A decoder error now restarts the picture instead of freezing it, and the "use 1080p next time" fallback only kicks in when H.265 really showed nothing.

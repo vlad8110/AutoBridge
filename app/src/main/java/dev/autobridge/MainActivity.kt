@@ -38,6 +38,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     private lateinit var panel: LinearLayout
     private lateinit var status: TextView
     private lateinit var truckBar: TruckBar
+    /** The see-through way into settings over Android Auto. */
+    private lateinit var dot: SettingsDot
     private lateinit var settingsPanel: SettingsPanel
     private var statusText = ""
     private var cursorOn = true
@@ -76,6 +78,8 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
             setBackgroundColor(Color.BLACK)
             addView(surface, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
             addView(panel, FrameLayout.LayoutParams(-1, -1))
+            dot = SettingsDot(context, resources.displayMetrics.widthPixels / 2012f) { settingsPanel.open() }
+            addView(dot)
             addOnLayoutChangeListener { _, l, t, r, b, _, _, _, _ ->
                 if (settled()) Settings(context).apply { viewW = r - l; viewH = b - t }  // used for the next session
                 fitSurface()
@@ -105,11 +109,12 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
         truckBar.show(BridgeService.latestTruck)
         BridgeService.instance?.fullForeground()
         ClusterNav.resumed(this)
-        BridgeService.onVideoActive = { active -> panel.visibility = if (active) View.GONE else View.VISIBLE; if (!active) applyBar(); fitSurface(); settingsPanel.refresh() }
+        BridgeService.onVideoActive = { active -> panel.visibility = if (active) View.GONE else View.VISIBLE; if (!active) applyBar(); fitSurface(); settingsPanel.refresh(); showDot() }
         show(BridgeService.status)
         if (Settings(this).wifi() == null) show("Waiting for Wi-Fi details: open AutoBridge Phone on the truck hotspot, or set them in Wi-Fi settings.")
         panel.visibility = if (BridgeService.instance?.video != null) View.GONE else View.VISIBLE
         if (BridgeService.instance?.video == null) applyBar()
+        showDot()
         applyStatusBar()
         fitSurface()  // a session may have started while this screen was paused (its callbacks were off)
         status.postDelayed(blink, 500)
@@ -156,7 +161,10 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     }
 
     /** Shows or hides the bar per the setting; only between connections, so Android Auto's shape stays right. */
-    private fun applyBar() { truckBar.visibility = if (Settings(this).barEnabled) View.VISIBLE else View.GONE }
+    private fun applyBar() { truckBar.visibility = if (Settings(this).barEnabled) View.VISIBLE else View.GONE; showDot() }
+
+    /** Whenever Android Auto is on screen, whatever the bars: settings are one tap away without a restart. */
+    private fun showDot() { dot.visibility = if (BridgeService.instance?.video != null) View.VISIBLE else View.GONE }
 
     /** A setting changed Android Auto's shape. It only measures the screen when it connects, so with a phone
      *  connected, close and reopen AutoBridge to reconnect at the new size; otherwise just apply it. */

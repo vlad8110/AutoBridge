@@ -78,6 +78,26 @@ object Display {
         return VideoConfig(res, w, h, mw, mh, dpi)
     }
 
+    /**
+     * The layout Android Auto picks for an area of [viewW] x [viewH] pixels at [dpi], by the rule decompiled from the
+     * Android Auto app (headunit-revived's DisplayLayoutPolicy; openautolink's notes agree). Google can change these
+     * numbers from its servers, so this is a guide shown next to the density setting, not a promise.
+     */
+    fun layout(viewW: Int, viewH: Int, dpi: Int): String {
+        val w = viewW * 160.0 / dpi; val h = viewH * 160.0 / dpi; val ratio = w / h
+        val tall = h >= 900 && ratio < 1.2
+        return when {
+            w >= 1240 && w > h && (ratio >= 1.67 || !tall) -> "Map beside cards"
+            tall -> "Map on top"
+            w >= 880 && ratio >= 1.67 -> "Map and side bar"
+            h >= 680 -> "Map and one card"
+            else -> "One app at a time"
+        }
+    }
+
+    /** The density Android Auto is given for this screen: the setting for these bars, else the truck's own. */
+    fun dpi(context: Context) = Settings(context).aaDpi.takeIf { it > 0 } ?: context.resources.displayMetrics.densityDpi
+
     /** Uses the projection view size the screen last reported, else the whole display. */
     fun config(context: Context): VideoPlan {
         val s = Settings(context)
@@ -86,6 +106,6 @@ object Display {
         val h = s.viewH.takeIf { it > 0 } ?: bounds.height()
         val hevc = MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.filter { !it.isEncoder }
             .mapNotNull { runCatching { it.getCapabilitiesForType(MediaFormat.MIMETYPE_VIDEO_HEVC).videoCapabilities }.getOrNull() }
-        return plan(w, h, context.resources.displayMetrics.densityDpi, !s.hevcFailed && s.hevcEnabled) { cw, ch -> hevc.any { it.isSizeSupported(cw, ch) } }
+        return plan(w, h, dpi(context), !s.hevcFailed && s.hevcEnabled) { cw, ch -> hevc.any { it.isSizeSupported(cw, ch) } }
     }
 }

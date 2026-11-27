@@ -175,6 +175,8 @@ public:
     aasdk::messenger::ICryptor::Pointer cryptor;
     aasdk::messenger::IMessenger::Pointer messenger;
     Config cfg;
+    int hiddenUi = 0;  // session_configuration: Android Auto status icons to hide (1 clock, 2 signal, 4 battery)
+    std::string make = "AutoBridge", model = "AAOS", year = "2025";  // the truck's own, when it shares them
     Listener listener;
     std::atomic<bool> ended{false};
     int pingsLogged = 0;
@@ -614,9 +616,10 @@ struct Control : Base, aasdk::channel::control::IControlServiceChannelEventHandl
         r.set_display_name("AutoBridge");
         r.set_driver_position(ctl::DRIVER_POSITION_LEFT);
         auto *hu = r.mutable_headunit_info();
-        hu->set_make("AutoBridge");
-        hu->set_model("AAOS");
-        hu->set_year("2025");
+        hu->set_make(s.make);
+        hu->set_model(s.model);
+        hu->set_year(s.year);
+        if (s.hiddenUi) r.set_session_configuration(s.hiddenUi);
         hu->set_vehicle_id("autobridge");
         hu->set_head_unit_make("AutoBridge");
         hu->set_head_unit_model("AutoBridge");
@@ -659,9 +662,14 @@ struct Control : Base, aasdk::channel::control::IControlServiceChannelEventHandl
     void onChannelError(const Error &e) override { fail(e); }
 };
 
-static Session *start(JNIEnv *env, int fd, const Config &cfg, const jint *truck, bool gps, jobject listener) {
+static Session *start(JNIEnv *env, int fd, const Config &cfg, const jint *truck, bool gps, int hiddenUi,
+                      const std::array<std::string, 3> &car, jobject listener) {
     auto *s = new Session();
     s->cfg = cfg;
+    s->hiddenUi = hiddenUi;
+    if (!car[0].empty()) s->make = car[0];
+    if (!car[1].empty()) s->model = car[1];
+    if (!car[2].empty()) s->year = car[2];
     s->offeredGps = gps;
     s->listener.bind(env, listener);
     for (int i = 0; i < 5; i++) { s->truck[i] = truck[i]; s->offered[i] = truck[i] != INT_MIN; }
@@ -747,7 +755,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *) { gVm = vm; return JNI_VERSION_1_6
 
 // cfg = VideoPlan.toArray(): [codec, n, then n x (resolution, codecW, codecH, marginW, marginH, dpi)]
 JNIEXPORT jlong JNICALL Java_dev_autobridge_Native_start(JNIEnv *env, jobject, jint fd, jintArray cfgArr, jintArray truckArr,
-                                                         jboolean gps, jobject listener) {
+                                                         jboolean gps, jint hiddenUi, jobjectArray carArr, jobject listener) {
     std::vector<jint> c(env->GetArrayLength(cfgArr));
     env->GetIntArrayRegion(cfgArr, 0, (jsize) c.size(), c.data());
     Config cfg{c[0], {}};
@@ -757,7 +765,16 @@ JNIEXPORT jlong JNICALL Java_dev_autobridge_Native_start(JNIEnv *env, jobject, j
     }
     jint t[5];
     env->GetIntArrayRegion(truckArr, 0, 5, t);
-    return (jlong) start(env, fd, cfg, t, gps, listener);
+    std::array<std::string, 3> car;  // make, model, year; empty = keep the default
+    for (int i = 0; i < 3 && i < env->GetArrayLength(carArr); i++) {
+        auto js = (jstring) env->GetObjectArrayElement(carArr, i);
+        if (!js) continue;
+        const char *c = env->GetStringUTFChars(js, nullptr);
+        car[i] = c;
+        env->ReleaseStringUTFChars(js, c);
+        env->DeleteLocalRef(js);
+    }
+    return (jlong) start(env, fd, cfg, t, gps, hiddenUi, car, listener);
 }
 
 JNIEXPORT void JNICALL Java_dev_autobridge_Native_location(JNIEnv *env, jobject, jlong h, jintArray fix) {

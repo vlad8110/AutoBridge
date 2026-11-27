@@ -48,4 +48,13 @@ class DisplayTest {
         assertEquals(7, c.resolution)
         assertEquals(1080, c.codecW)
     }
+
+    @Test fun predictsTheLayoutYouGetInTheSierra() {
+        // Both bars off: 2012 x 1680 is just taller than 1.2, so the map goes on top...
+        assertEquals("Map on top", Display.layout(2012, 1680, 240))
+        // ...and four pixels less height is enough to put it beside the cards: why one stale measurement flipped it.
+        assertEquals("Map beside cards", Display.layout(2012, 1676, 240))
+        // A higher density makes the screen look smaller: fewer cards.
+        assertEquals("Map and one card", Display.layout(2012, 1460, 300))
+    }
 }

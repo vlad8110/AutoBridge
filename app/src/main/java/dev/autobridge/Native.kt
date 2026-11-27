@@ -23,7 +23,8 @@ object Native {
     /** Takes ownership of [fd], a connected TCP socket. cfg = [VideoPlan.toArray].
      * truck = [Truck.toArray]; what is known at start is what Android Auto is told the car has.
      * gps = the truck's location will follow through [location]. */
-    external fun start(fd: Int, cfg: IntArray, truck: IntArray, gps: Boolean, listener: Listener): Long
+    /** [hiddenUi]: Settings.HIDE_* bits. [car]: make, model, year from the truck ("" = AutoBridge's defaults). */
+    external fun start(fd: Int, cfg: IntArray, truck: IntArray, gps: Boolean, hiddenUi: Int, car: Array<String>, listener: Listener): Long
     /** fix = [lat e7, lon e7, accuracy e3 m (-1 unknown), altitude e2 m (Int.MIN_VALUE unknown), speed e3 m/s (-1), bearing e6 deg (-1)] */
     external fun location(handle: Long, fix: IntArray)
     external fun stop(handle: Long)
