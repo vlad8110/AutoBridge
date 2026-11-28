@@ -3,7 +3,7 @@
 What changed in each AutoBridge version since the project went public (November 23, 2026).
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
-## 0.8.15 (in progress, not released)
+## 0.8.15 (November 27, 2026, truck app only)
 - Equalizer: the level lights are softer while the EQ is on (the brightness they used to have when it was off), and dimmer still when it's off.
 
 ## 0.8.14 (November 27, 2026, truck app only)
