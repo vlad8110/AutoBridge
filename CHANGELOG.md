@@ -4,6 +4,7 @@ What changed in each AutoBridge version since the project went public (November 
 The truck app comes from the Play Store test. The phone app is on the [Releases](https://github.com/vlad8110/AutoBridge/releases) page; this link always downloads the newest one: https://github.com/vlad8110/AutoBridge/releases/latest/download/AutoBridge-Phone.apk
 
 ## 0.8.14 (in progress, not released)
+- New start screen while Android Auto comes up, in the truck's style: your phone and the truck on a dotted line that turns red as the connection builds, and one step card that rolls from Bluetooth to Wi-Fi, Phone app, Android Auto, then Android Auto's badge, which turns blue (and the truck's lights come on) when the picture arrives. The latest status lines roll underneath with their timings. If a step fails, its card turns red and a panel says what went wrong, with Retry and Send log. Replaces the Linux-style text.
 - Equalizer: while driving, the greyed-out pencil button no longer reacts at all when pressed (no press bounce, no sound).
 
 ## 0.8.13 (November 27, 2026, truck app only)

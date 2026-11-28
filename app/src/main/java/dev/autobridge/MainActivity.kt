@@ -39,45 +39,26 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     /** Everything on screen: Android Auto, the truck bar and the settings pages on top. */
     private lateinit var screen: FrameLayout
     private lateinit var surface: SurfaceView
-    private lateinit var panel: LinearLayout
-    private lateinit var status: TextView
+    private lateinit var panel: StartScreen
     private lateinit var truckBar: TruckBar
     /** The see-through way into settings over Android Auto. */
     private lateinit var dot: SettingsDot
     private lateinit var settingsPanel: SettingsPanel
-    private var statusText = ""
-    private var cursorOn = true
-    private val blink = object : Runnable {
-        override fun run() {
-            if (panel.visibility == View.VISIBLE) { cursorOn = !cursorOn; status.text = Console.render(statusText, cursorOn) }  // hidden under the video: skip
-            status.postDelayed(this, 500)
-        }
-    }
-
-    private fun show(text: String) { statusText = text; status.text = Console.render(text, cursorOn) }
+    /** A one-off message (settings, missing Wi-Fi details): a line in the start screen's log. */
+    private fun show(text: String) = panel.note(text)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         surface = SurfaceView(this).apply { holder.addCallback(this@MainActivity) }
-        // The waiting screen looks like a Linux console: monospace, coloured status tags, blinking cursor.
-        status = TextView(this).apply { textSize = 20f; typeface = Typeface.MONOSPACE; setLineSpacing(8f, 1f) }
         settingsPanel = SettingsPanel(this, editWifi = ::editWifi, toast = ::show, onShapeChanged = ::shapeChanged, onExit = ::exitApp)
-        val settings = TextView(this).apply {
-            text = "Settings"; textSize = 18f; setTextColor(WHITE); gravity = Gravity.CENTER; setPadding(56, 28, 56, 40)
-            Lamp.style(this, resources.displayMetrics.widthPixels / 2012f, 18f)  // the 0.8 button: black, white text, red lamp
-            setOnClickListener { settingsPanel.open() }
-        }
         // The truck's data in a black strip under Android Auto (always shown).
         truckBar = TruckBar(this).apply { onSettings = { settingsPanel.open() } }
-        panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Console.BACKGROUND)
-            setPadding(64, 48, 64, 48)
-            addView(status, LinearLayout.LayoutParams(-1, 0, 1f))
-            addView(settings, LinearLayout.LayoutParams(-2, -2))
-        }
+        // While Android Auto comes up: the phone, the truck and one rolling step card, with the status lines underneath.
+        panel = StartScreen(this, onSettings = { settingsPanel.open() },
+            onLog = { BridgeService.instance?.sendLogs("startup") ?: show("AutoBridge isn't running yet") },
+            onRetry = { BridgeService.instance?.retry() ?: show("AutoBridge isn't running yet") })
         root = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             addView(surface, FrameLayout.LayoutParams(-1, -1, Gravity.CENTER))
@@ -106,22 +87,28 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
 
     override fun onResume() {
         super.onResume()
-        BridgeService.onStatus = { show(it) }
+        BridgeService.onStatus = { panel.status(it) }
         BridgeService.onTruck = { truckBar.show(it); settingsPanel.showTruck(it) }
         BridgeService.capture = ::screenshot
         BridgeService.onMoving = { moving -> if (moving) wifiDialog?.dismiss(); settingsPanel.movingChanged() }
         truckBar.show(BridgeService.latestTruck)
         BridgeService.instance?.fullForeground()
         ClusterNav.resumed(this)
-        BridgeService.onVideoActive = { active -> panel.visibility = if (active) View.GONE else View.VISIBLE; if (!active) applyBar(); fitSurface(); settingsPanel.refresh(); showDot() }
-        show(BridgeService.status)
+        BridgeService.onVideoActive = { active ->
+            panel.ready(active)
+            // A moment to see Android Auto's badge turn blue and the truck's lights come on, then the picture.
+            if (active) panel.postDelayed({ if (BridgeService.instance?.video != null) panel.visibility = View.GONE }, 800)
+            else { panel.visibility = View.VISIBLE; applyBar() }
+            fitSurface(); settingsPanel.refresh(); showDot()
+        }
+        panel.status(BridgeService.status)
+        panel.ready(BridgeService.instance?.video != null)
         if (Settings(this).wifi() == null) show("Waiting for Wi-Fi details: open AutoBridge Phone on the truck hotspot, or set them in Wi-Fi settings.")
         panel.visibility = if (BridgeService.instance?.video != null) View.GONE else View.VISIBLE
         if (BridgeService.instance?.video == null) applyBar()
         showDot()
         applyStatusBar()
         fitSurface()  // a session may have started while this screen was paused (its callbacks were off)
-        status.postDelayed(blink, 500)
         settingsPanel.shown(true)
         resumed = true
         root.requestLayout()  // measure again now that the bars are as set
@@ -130,7 +117,6 @@ class MainActivity : Activity(), SurfaceHolder.Callback {
     override fun onPause() {
         resumed = false
         settingsPanel.shown(false)
-        status.removeCallbacks(blink)
         BridgeService.onStatus = null
         BridgeService.onTruck = null
         BridgeService.capture = null

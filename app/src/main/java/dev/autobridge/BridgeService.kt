@@ -411,6 +411,13 @@ class BridgeService : Service() {
         }
     }
 
+    /** The start screen's Retry: ask the phone to rejoin the hotspot now instead of at the next 10-second try. */
+    fun retry() {
+        if (invite == null) return say("Retry: the phone isn't connected over Bluetooth yet. Check that its Bluetooth is on and connected to the truck")
+        busyAt = 0; invitedAt = 0
+        say("Retrying: asking the phone to rejoin the hotspot")
+    }
+
     /** The phone pings all the time; silence means it's gone (Wi-Fi dropped) even if no error arrives. */
     private val watchdog = object : Runnable {
         override fun run() {
