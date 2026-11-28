@@ -233,7 +233,7 @@ class EqPanel(context: Context, private val k: Float, private val toAndroidAuto:
                     seg.set(x(i) - half, bottom - (n + 1) * segH + 4 * k, x(i) + half, bottom - n * segH - 4 * k)
                     if (n >= lit) { p.color = LED_OFF; c.drawRoundRect(seg, 3 * k, 3 * k, p); continue }
                     val led = when { n < SEGMENTS * 0.6f -> LED_GREEN; n < SEGMENTS * 0.85f -> LED_YELLOW; else -> LED_RED }
-                    val a = if (dim) 0x66 else 0xFF  // EQ off: the lights dim with the caps
+                    val a = if (dim) 0x33 else 0x66  // the owner's level: softer than full; EQ off dims them further
                     halo.set(seg.left - 5 * k, seg.top - 5 * k, seg.right + 5 * k, seg.bottom + 5 * k)
                     p.color = (led and 0xFFFFFF) or ((a / 5) shl 24); c.drawRoundRect(halo, 8 * k, 8 * k, p)  // soft glow
                     p.color = (led and 0xFFFFFF) or (a shl 24); c.drawRoundRect(seg, 3 * k, 3 * k, p)
